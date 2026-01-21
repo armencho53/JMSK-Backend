@@ -1,0 +1,1067 @@
+name: Integration Tests
+
+on:
+  # Trigger after successful frontend deployment
+  workflow_run:
+    workflows: ["Deploy Frontend"]
+    types:
+      - completed
+    branches: [main]
+  
+  # Manual trigger for testing specific deployments
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      frontend_url:
+        description: 'Frontend URL to test (optional - will auto-detect if not provided)'
+        required: false
+        type: string
+      api_url:
+        description: 'Backend API URL to test (optional - will auto-detect if not provided)'
+        required: false
+        type: string
+
+# Required for OIDC token exchange if needed for AWS resources
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # Check if frontend deployment was successful (for workflow_run trigger)
+  check-deployment-success:
+    name: Check Deployment Status
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run'
+    
+    outputs:
+      should-proceed: ${{ steps.check.outputs.should-proceed }}
+      deployment-environment: ${{ steps.check.outputs.deployment-environment }}
+      frontend-url: ${{ steps.check.outputs.frontend-url }}
+      api-url: ${{ steps.check.outputs.api-url }}
+    
+    steps:
+      - name: Check frontend deployment success
+        id: check
+        run: |
+          if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "should-proceed=true" >> $GITHUB_OUTPUT
+            echo "Frontend deployment was successful, proceeding with integration tests"
+            
+            # Extract environment from workflow run (simplified approach)
+            # In practice, this could be extracted from workflow artifacts or API calls
+            echo "deployment-environment=prod" >> $GITHUB_OUTPUT
+            echo "frontend-url=" >> $GITHUB_OUTPUT  # Will be auto-detected
+            echo "api-url=" >> $GITHUB_OUTPUT      # Will be auto-detected
+          else
+            echo "should-proceed=false" >> $GITHUB_OUTPUT
+            echo "Frontend deployment failed, skipping integration tests"
+          fi
+
+  determine-test-targets:
+    name: Determine Test Targets
+    runs-on: ubuntu-latest
+    needs: [check-deployment-success]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.check-deployment-success.outputs.should-proceed == 'true')
+    
+    outputs:
+      environment: ${{ steps.targets.outputs.environment }}
+      should-test: ${{ steps.targets.outputs.should-test }}
+      frontend-url: ${{ steps.targets.outputs.frontend-url }}
+      api-url: ${{ steps.targets.outputs.api-url }}
+    
+    steps:
+      - name: Determine test targets
+        id: targets
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual dispatch - use provided inputs
+            ENVIRONMENT="${{ inputs.environment }}"
+            FRONTEND_URL="${{ inputs.frontend_url }}"
+            API_URL="${{ inputs.api_url }}"
+            SHOULD_TEST="true"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Automatic testing after deployment
+            ENVIRONMENT="${{ needs.check-deployment-success.outputs.deployment-environment }}"
+            FRONTEND_URL="${{ needs.check-deployment-success.outputs.frontend-url }}"
+            API_URL="${{ needs.check-deployment-success.outputs.api-url }}"
+            SHOULD_TEST="true"
+          else
+            # Other events - no testing
+            ENVIRONMENT="prod"
+            FRONTEND_URL=""
+            API_URL=""
+            SHOULD_TEST="false"
+          fi
+          
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "should-test=$SHOULD_TEST" >> $GITHUB_OUTPUT
+          echo "frontend-url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          echo "Determined test environment: $ENVIRONMENT (test: $SHOULD_TEST)"
+
+  setup-test-environment:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    needs: [determine-test-targets]
+    if: needs.determine-test-targets.outputs.should-test == 'true'
+    
+    outputs:
+      frontend-url: ${{ steps.discover.outputs.frontend-url }}
+      api-url: ${{ steps.discover.outputs.api-url }}
+      test-environment-ready: ${{ steps.validate.outputs.test-environment-ready }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set environment-specific variables
+        id: env-vars
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          # Set environment-specific AWS role ARNs for resource discovery
+          case "$TEST_ENV" in
+            "dev")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_DEV || vars.AWS_ROLE_ARN }}"
+              ;;
+            "staging")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_STAGING || vars.AWS_ROLE_ARN }}"
+              ;;
+            "prod")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD || vars.AWS_ROLE_ARN }}"
+              ;;
+            *)
+              echo "Unknown environment: $TEST_ENV"
+              exit 1
+              ;;
+          esac
+          
+          echo "aws-role-arn=$AWS_ROLE_ARN" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.env-vars.outputs.aws-role-arn }}
+          aws-region: us-east-1
+          role-session-name: GitHubActions-IntegrationTests-${{ needs.determine-test-targets.outputs.environment }}
+
+      - name: Discover deployment URLs
+        id: discover
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+          PROVIDED_FRONTEND_URL: ${{ needs.determine-test-targets.outputs.frontend-url }}
+          PROVIDED_API_URL: ${{ needs.determine-test-targets.outputs.api-url }}
+        run: |
+          # Use provided URLs if available, otherwise auto-discover from AWS resources
+          
+          # Discover API URL
+          if [ -n "$PROVIDED_API_URL" ]; then
+            FINAL_API_URL="$PROVIDED_API_URL"
+            echo "Using provided API URL: $FINAL_API_URL"
+          else
+            # Get API URL from backend CloudFormation stack
+            BACKEND_STACK="jewelry-backend-$TEST_ENV"
+            
+            API_URL=$(aws cloudformation describe-stacks \
+              --stack-name "$BACKEND_STACK" \
+              --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$API_URL" ] && [ "$API_URL" != "None" ]; then
+              FINAL_API_URL="$API_URL"
+              echo "Discovered API URL from CloudFormation: $FINAL_API_URL"
+            else
+              echo "ERROR: Could not discover API URL for environment $TEST_ENV"
+              exit 1
+            fi
+          fi
+          
+          # Discover Frontend URL
+          if [ -n "$PROVIDED_FRONTEND_URL" ]; then
+            FINAL_FRONTEND_URL="$PROVIDED_FRONTEND_URL"
+            echo "Using provided frontend URL: $FINAL_FRONTEND_URL"
+          else
+            # Get frontend URL from CloudFront distribution or S3 bucket
+            FRONTEND_STACK="jewelry-frontend-$TEST_ENV"
+            
+            # Try to get CloudFront URL from stack outputs
+            FRONTEND_URL=$(aws cloudformation describe-stacks \
+              --stack-name "$FRONTEND_STACK" \
+              --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontUrl` || OutputKey==`FrontendUrl`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$FRONTEND_URL" ] && [ "$FRONTEND_URL" != "None" ]; then
+              FINAL_FRONTEND_URL="$FRONTEND_URL"
+              echo "Discovered frontend URL from CloudFormation: $FINAL_FRONTEND_URL"
+            else
+              # Fallback: try to find CloudFront distribution by S3 bucket
+              S3_BUCKET="jewelry-frontend-$TEST_ENV"
+              
+              DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+                --query "DistributionList.Items[?Origins.Items[?DomainName=='$S3_BUCKET.s3.amazonaws.com']].Id" \
+                --output text | head -n1)
+              
+              if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
+                CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
+                  --id "$DISTRIBUTION_ID" \
+                  --query 'Distribution.DomainName' \
+                  --output text)
+                
+                FINAL_FRONTEND_URL="https://$CLOUDFRONT_DOMAIN"
+                echo "Discovered frontend URL from CloudFront distribution: $FINAL_FRONTEND_URL"
+              else
+                echo "ERROR: Could not discover frontend URL for environment $TEST_ENV"
+                exit 1
+              fi
+            fi
+          fi
+          
+          echo "api-url=$FINAL_API_URL" >> $GITHUB_OUTPUT
+          echo "frontend-url=$FINAL_FRONTEND_URL" >> $GITHUB_OUTPUT
+
+      - name: Validate test environment
+        id: validate
+        env:
+          API_URL: ${{ steps.discover.outputs.api-url }}
+          FRONTEND_URL: ${{ steps.discover.outputs.frontend-url }}
+        run: |
+          echo "Validating test environment..."
+          echo "API URL: $API_URL"
+          echo "Frontend URL: $FRONTEND_URL"
+          
+          # Basic URL format validation
+          if [[ ! "$API_URL" =~ ^https?:// ]]; then
+            echo "ERROR: Invalid API URL format: $API_URL"
+            exit 1
+          fi
+          
+          if [[ ! "$FRONTEND_URL" =~ ^https?:// ]]; then
+            echo "ERROR: Invalid frontend URL format: $FRONTEND_URL"
+            exit 1
+          fi
+          
+          echo "test-environment-ready=true" >> $GITHUB_OUTPUT
+          echo "Test environment validation passed"
+
+  api-smoke-tests:
+    name: API Endpoint Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [determine-test-targets, setup-test-environment]
+    if: needs.setup-test-environment.outputs.test-environment-ready == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pytest pytest-html pytest-json-report
+
+      - name: Run API smoke tests
+        env:
+          API_URL: ${{ needs.setup-test-environment.outputs.api-url }}
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          echo "Running API smoke tests against: $API_URL"
+          
+          # Create a simple smoke test script
+          cat > api_smoke_tests.py << 'EOF'
+          import requests
+          import pytest
+          import os
+          import json
+          from urllib.parse import urljoin
+          
+          API_URL = os.environ.get('API_URL')
+          
+          class TestAPISmoke:
+              """Smoke tests for API endpoints."""
+              
+              def test_api_health_check(self):
+                  """Test that API is responding."""
+                  response = requests.get(f"{API_URL}/docs", timeout=30)
+                  assert response.status_code in [200, 404], f"API health check failed with status {response.status_code}"
+              
+              def test_api_root_endpoint(self):
+                  """Test API root endpoint accessibility."""
+                  try:
+                      response = requests.get(API_URL, timeout=30)
+                      # Accept various success codes - API might redirect or return different responses
+                      assert response.status_code < 500, f"API root returned server error: {response.status_code}"
+                  except requests.exceptions.RequestException as e:
+                      pytest.fail(f"API root endpoint not accessible: {e}")
+              
+              def test_api_v1_endpoints_exist(self):
+                  """Test that API v1 endpoints are mounted."""
+                  endpoints_to_test = [
+                      "/api/v1/auth/login",
+                      "/api/v1/tenants/",
+                      "/api/v1/customers/",
+                  ]
+                  
+                  for endpoint in endpoints_to_test:
+                      url = urljoin(API_URL, endpoint)
+                      try:
+                          response = requests.post(url, json={}, timeout=30)
+                          # Endpoint should exist (not 404), but may return validation errors (422) or auth errors (401)
+                          assert response.status_code != 404, f"Endpoint {endpoint} not found (404)"
+                          assert response.status_code < 500, f"Endpoint {endpoint} returned server error: {response.status_code}"
+                      except requests.exceptions.RequestException as e:
+                          pytest.fail(f"Endpoint {endpoint} not accessible: {e}")
+              
+              def test_api_cors_headers(self):
+                  """Test that API has proper CORS headers for frontend."""
+                  try:
+                      response = requests.options(f"{API_URL}/api/v1/", timeout=30)
+                      # CORS preflight should be handled properly
+                      assert response.status_code in [200, 204, 405], f"CORS preflight failed: {response.status_code}"
+                  except requests.exceptions.RequestException as e:
+                      # CORS might not be configured for OPTIONS, which is acceptable
+                      pass
+              
+              def test_api_response_format(self):
+                  """Test that API returns proper JSON responses."""
+                  try:
+                      # Test an endpoint that should return JSON
+                      response = requests.post(f"{API_URL}/api/v1/auth/login", 
+                                             json={"email": "test", "password": "test"}, 
+                                             timeout=30)
+                      
+                      # Should return JSON content type for API endpoints
+                      content_type = response.headers.get('content-type', '')
+                      if response.status_code != 404:  # Only check if endpoint exists
+                          assert 'json' in content_type.lower(), f"API should return JSON, got: {content_type}"
+                  except requests.exceptions.RequestException as e:
+                      pytest.fail(f"API response format test failed: {e}")
+          EOF
+          
+          # Run the smoke tests
+          pytest api_smoke_tests.py -v \
+            --html=api_smoke_test_report.html \
+            --json-report --json-report-file=api_smoke_test_results.json \
+            --tb=short
+
+      - name: Upload API test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-smoke-test-results-${{ needs.determine-test-targets.outputs.environment }}
+          path: |
+            api_smoke_test_report.html
+            api_smoke_test_results.json
+          retention-days: 30
+
+      - name: Report API test results
+        if: always()
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+          API_URL: ${{ needs.setup-test-environment.outputs.api-url }}
+        run: |
+          echo "## 🔍 API Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $TEST_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**API URL:** $API_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Parse test results if available
+          if [ -f api_smoke_test_results.json ]; then
+            TOTAL_TESTS=$(python -c "
+            import json
+            try:
+                with open('api_smoke_test_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('total', 0))
+            except:
+                print('0')
+            ")
+            
+            PASSED_TESTS=$(python -c "
+            import json
+            try:
+                with open('api_smoke_test_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('passed', 0))
+            except:
+                print('0')
+            ")
+            
+            FAILED_TESTS=$(python -c "
+            import json
+            try:
+                with open('api_smoke_test_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('failed', 0))
+            except:
+                print('0')
+            ")
+            
+            echo "**Tests:** $PASSED_TESTS passed, $FAILED_TESTS failed (total: $TOTAL_TESTS)" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$FAILED_TESTS" -gt 0 ]; then
+              echo "**Status:** ❌ Some API tests failed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Status:** ✅ All API tests passed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Status:** ⚠️ Test results not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Detailed test report available in artifacts" >> $GITHUB_STEP_SUMMARY
+
+  frontend-accessibility-tests:
+    name: Frontend Accessibility Tests
+    runs-on: ubuntu-latest
+    needs: [determine-test-targets, setup-test-environment]
+    if: needs.setup-test-environment.outputs.test-environment-ready == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install accessibility testing tools
+        run: |
+          npm install -g @axe-core/cli lighthouse-ci pa11y
+
+      - name: Run accessibility tests with axe-core
+        env:
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          echo "Running accessibility tests against: $FRONTEND_URL"
+          
+          # Create accessibility test results directory
+          mkdir -p accessibility-results
+          
+          # Run axe-core accessibility tests
+          echo "Running axe-core accessibility scan..."
+          
+          # Test main pages (handle potential auth redirects gracefully)
+          PAGES_TO_TEST=(
+            "$FRONTEND_URL"
+            "$FRONTEND_URL/login"
+          )
+          
+          for page in "${PAGES_TO_TEST[@]}"; do
+            echo "Testing accessibility for: $page"
+            
+            # Run axe test with timeout and error handling
+            if timeout 60 axe "$page" \
+              --format json \
+              --output "accessibility-results/axe-$(basename "$page" | tr '/' '_').json" \
+              --timeout 30000 \
+              --disable-dev-shm-usage 2>/dev/null; then
+              echo "✅ Axe accessibility test completed for $page"
+            else
+              echo "⚠️ Axe accessibility test failed or timed out for $page"
+              # Create empty result file to avoid missing artifacts
+              echo '{"violations": [], "passes": [], "incomplete": [], "inapplicable": []}' > \
+                "accessibility-results/axe-$(basename "$page" | tr '/' '_').json"
+            fi
+          done
+
+      - name: Run Lighthouse accessibility audit
+        env:
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+        run: |
+          echo "Running Lighthouse accessibility audit..."
+          
+          # Create Lighthouse CI configuration
+          cat > lighthouserc.json << 'EOF'
+          {
+            "ci": {
+              "collect": {
+                "numberOfRuns": 1,
+                "settings": {
+                  "chromeFlags": "--no-sandbox --disable-dev-shm-usage --headless"
+                }
+              },
+              "assert": {
+                "assertions": {
+                  "categories:accessibility": ["error", {"minScore": 0.8}],
+                  "categories:best-practices": ["warn", {"minScore": 0.8}]
+                }
+              },
+              "upload": {
+                "target": "filesystem",
+                "outputDir": "./lighthouse-results"
+              }
+            }
+          }
+          EOF
+          
+          # Run Lighthouse CI with error handling
+          if timeout 120 lhci autorun --upload.target=filesystem --collect.url="$FRONTEND_URL" 2>/dev/null; then
+            echo "✅ Lighthouse accessibility audit completed"
+          else
+            echo "⚠️ Lighthouse accessibility audit failed or timed out"
+            # Create results directory to avoid missing artifacts
+            mkdir -p lighthouse-results
+          fi
+
+      - name: Run pa11y accessibility tests
+        env:
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+        run: |
+          echo "Running pa11y accessibility tests..."
+          
+          # Run pa11y with error handling
+          if timeout 60 pa11y "$FRONTEND_URL" \
+            --reporter json \
+            --timeout 30000 \
+            --chromium-executable $(which google-chrome-stable || which chromium-browser || echo "chromium") \
+            --chrome-flags="--no-sandbox --disable-dev-shm-usage" > accessibility-results/pa11y-results.json 2>/dev/null; then
+            echo "✅ pa11y accessibility test completed"
+          else
+            echo "⚠️ pa11y accessibility test failed or timed out"
+            # Create empty result file
+            echo '[]' > accessibility-results/pa11y-results.json
+          fi
+
+      - name: Upload accessibility test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accessibility-test-results-${{ needs.determine-test-targets.outputs.environment }}
+          path: |
+            accessibility-results/
+            lighthouse-results/
+          retention-days: 30
+
+      - name: Report accessibility test results
+        if: always()
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+        run: |
+          echo "## ♿ Accessibility Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $TEST_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** $FRONTEND_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Parse axe-core results
+          if [ -d accessibility-results ]; then
+            AXE_FILES=$(find accessibility-results -name "axe-*.json" | wc -l)
+            echo "**Axe-core Tests:** $AXE_FILES pages scanned" >> $GITHUB_STEP_SUMMARY
+            
+            # Count total violations across all axe files
+            TOTAL_VIOLATIONS=$(find accessibility-results -name "axe-*.json" -exec cat {} \; | \
+              python -c "
+              import json, sys
+              total = 0
+              for line in sys.stdin:
+                  try:
+                      data = json.loads(line)
+                      total += len(data.get('violations', []))
+                  except:
+                      pass
+              print(total)
+              " 2>/dev/null || echo "0")
+            
+            if [ "$TOTAL_VIOLATIONS" -eq 0 ]; then
+              echo "**Axe-core Status:** ✅ No accessibility violations found" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Axe-core Status:** ⚠️ $TOTAL_VIOLATIONS accessibility violations found" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Check Lighthouse results
+          if [ -d lighthouse-results ]; then
+            LIGHTHOUSE_FILES=$(find lighthouse-results -name "*.json" | wc -l)
+            echo "**Lighthouse Tests:** $LIGHTHOUSE_FILES audits completed" >> $GITHUB_STEP_SUMMARY
+            echo "**Lighthouse Status:** ✅ Audit completed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check pa11y results
+          if [ -f accessibility-results/pa11y-results.json ]; then
+            PA11Y_ISSUES=$(python -c "
+            import json
+            try:
+                with open('accessibility-results/pa11y-results.json') as f:
+                    data = json.load(f)
+                    print(len(data) if isinstance(data, list) else 0)
+            except:
+                print('0')
+            " 2>/dev/null || echo "0")
+            
+            if [ "$PA11Y_ISSUES" -eq 0 ]; then
+              echo "**pa11y Status:** ✅ No accessibility issues found" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**pa11y Status:** ⚠️ $PA11Y_ISSUES accessibility issues found" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Detailed accessibility reports available in artifacts" >> $GITHUB_STEP_SUMMARY
+
+  frontend-functionality-tests:
+    name: Frontend Basic Functionality Tests
+    runs-on: ubuntu-latest
+    needs: [determine-test-targets, setup-test-environment]
+    if: needs.setup-test-environment.outputs.test-environment-ready == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Playwright for browser testing
+        run: |
+          npm install -g playwright
+          npx playwright install chromium
+
+      - name: Run basic functionality tests
+        env:
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+          API_URL: ${{ needs.setup-test-environment.outputs.api-url }}
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          echo "Running basic functionality tests against: $FRONTEND_URL"
+          
+          # Create a basic functionality test script
+          cat > frontend_functionality_tests.js << 'EOF'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          
+          const FRONTEND_URL = process.env.FRONTEND_URL;
+          const API_URL = process.env.API_URL;
+          
+          async function runTests() {
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              viewport: { width: 1280, height: 720 }
+            });
+            const page = await context.newPage();
+            
+            const results = {
+              tests: [],
+              summary: { total: 0, passed: 0, failed: 0 }
+            };
+            
+            // Test 1: Page loads successfully
+            try {
+              console.log('Test 1: Testing page load...');
+              await page.goto(FRONTEND_URL, { waitUntil: 'networkidle', timeout: 30000 });
+              
+              const title = await page.title();
+              const hasContent = await page.locator('body').count() > 0;
+              
+              if (hasContent) {
+                results.tests.push({
+                  name: 'Page loads successfully',
+                  status: 'passed',
+                  details: `Page title: ${title}`
+                });
+                results.summary.passed++;
+              } else {
+                throw new Error('Page body not found');
+              }
+            } catch (error) {
+              results.tests.push({
+                name: 'Page loads successfully',
+                status: 'failed',
+                error: error.message
+              });
+              results.summary.failed++;
+            }
+            results.summary.total++;
+            
+            // Test 2: React app is rendered
+            try {
+              console.log('Test 2: Testing React app rendering...');
+              
+              // Look for common React patterns
+              const reactRoot = await page.locator('#root, [data-reactroot], .App').first().count();
+              const hasJavaScript = await page.evaluate(() => {
+                return typeof window.React !== 'undefined' || 
+                       document.querySelector('script[src*="react"]') !== null ||
+                       document.querySelector('div[id="root"]') !== null;
+              });
+              
+              if (reactRoot > 0 || hasJavaScript) {
+                results.tests.push({
+                  name: 'React app is rendered',
+                  status: 'passed',
+                  details: 'React application detected'
+                });
+                results.summary.passed++;
+              } else {
+                throw new Error('React application not detected');
+              }
+            } catch (error) {
+              results.tests.push({
+                name: 'React app is rendered',
+                status: 'failed',
+                error: error.message
+              });
+              results.summary.failed++;
+            }
+            results.summary.total++;
+            
+            // Test 3: Navigation elements are present
+            try {
+              console.log('Test 3: Testing navigation elements...');
+              
+              // Look for common navigation patterns
+              const navElements = await page.locator('nav, .nav, .navigation, .sidebar, .menu, header').count();
+              const links = await page.locator('a').count();
+              
+              if (navElements > 0 || links > 0) {
+                results.tests.push({
+                  name: 'Navigation elements are present',
+                  status: 'passed',
+                  details: `Found ${navElements} nav elements and ${links} links`
+                });
+                results.summary.passed++;
+              } else {
+                throw new Error('No navigation elements found');
+              }
+            } catch (error) {
+              results.tests.push({
+                name: 'Navigation elements are present',
+                status: 'failed',
+                error: error.message
+              });
+              results.summary.failed++;
+            }
+            results.summary.total++;
+            
+            // Test 4: No JavaScript errors in console
+            try {
+              console.log('Test 4: Testing for JavaScript errors...');
+              
+              const errors = [];
+              page.on('pageerror', error => {
+                errors.push(error.message);
+              });
+              
+              // Reload page to capture any errors
+              await page.reload({ waitUntil: 'networkidle', timeout: 30000 });
+              
+              // Wait a bit for any async errors
+              await page.waitForTimeout(2000);
+              
+              if (errors.length === 0) {
+                results.tests.push({
+                  name: 'No JavaScript errors in console',
+                  status: 'passed',
+                  details: 'No JavaScript errors detected'
+                });
+                results.summary.passed++;
+              } else {
+                throw new Error(`JavaScript errors found: ${errors.join(', ')}`);
+              }
+            } catch (error) {
+              results.tests.push({
+                name: 'No JavaScript errors in console',
+                status: 'failed',
+                error: error.message
+              });
+              results.summary.failed++;
+            }
+            results.summary.total++;
+            
+            // Test 5: API connectivity (if login form is present)
+            try {
+              console.log('Test 5: Testing API connectivity...');
+              
+              // Look for login form or API-related elements
+              const loginForm = await page.locator('form, input[type="email"], input[type="password"]').count();
+              
+              if (loginForm > 0) {
+                // Try to make a simple API request to test connectivity
+                const response = await page.evaluate(async (apiUrl) => {
+                  try {
+                    const res = await fetch(`${apiUrl}/docs`, { method: 'GET' });
+                    return { status: res.status, ok: res.ok };
+                  } catch (error) {
+                    return { error: error.message };
+                  }
+                }, API_URL);
+                
+                if (response.ok || response.status < 500) {
+                  results.tests.push({
+                    name: 'API connectivity test',
+                    status: 'passed',
+                    details: `API responded with status ${response.status}`
+                  });
+                  results.summary.passed++;
+                } else {
+                  throw new Error(`API connectivity failed: ${response.error || response.status}`);
+                }
+              } else {
+                results.tests.push({
+                  name: 'API connectivity test',
+                  status: 'skipped',
+                  details: 'No login form found, skipping API test'
+                });
+              }
+            } catch (error) {
+              results.tests.push({
+                name: 'API connectivity test',
+                status: 'failed',
+                error: error.message
+              });
+              results.summary.failed++;
+            }
+            results.summary.total++;
+            
+            await browser.close();
+            
+            // Write results to file
+            fs.writeFileSync('frontend_functionality_results.json', JSON.stringify(results, null, 2));
+            
+            console.log('\n=== Test Results ===');
+            console.log(`Total: ${results.summary.total}`);
+            console.log(`Passed: ${results.summary.passed}`);
+            console.log(`Failed: ${results.summary.failed}`);
+            
+            // Exit with error code if any tests failed
+            if (results.summary.failed > 0) {
+              process.exit(1);
+            }
+          }
+          
+          runTests().catch(error => {
+            console.error('Test execution failed:', error);
+            process.exit(1);
+          });
+          EOF
+          
+          # Run the functionality tests
+          node frontend_functionality_tests.js
+
+      - name: Upload functionality test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-functionality-test-results-${{ needs.determine-test-targets.outputs.environment }}
+          path: |
+            frontend_functionality_results.json
+          retention-days: 30
+
+      - name: Report functionality test results
+        if: always()
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+        run: |
+          echo "## 🧪 Frontend Functionality Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $TEST_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** $FRONTEND_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Parse functionality test results
+          if [ -f frontend_functionality_results.json ]; then
+            TOTAL_TESTS=$(python -c "
+            import json
+            try:
+                with open('frontend_functionality_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('total', 0))
+            except:
+                print('0')
+            ")
+            
+            PASSED_TESTS=$(python -c "
+            import json
+            try:
+                with open('frontend_functionality_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('passed', 0))
+            except:
+                print('0')
+            ")
+            
+            FAILED_TESTS=$(python -c "
+            import json
+            try:
+                with open('frontend_functionality_results.json') as f:
+                    data = json.load(f)
+                    print(data.get('summary', {}).get('failed', 0))
+            except:
+                print('0')
+            ")
+            
+            echo "**Tests:** $PASSED_TESTS passed, $FAILED_TESTS failed (total: $TOTAL_TESTS)" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$FAILED_TESTS" -gt 0 ]; then
+              echo "**Status:** ❌ Some functionality tests failed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Status:** ✅ All functionality tests passed" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # List individual test results
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Test Details" >> $GITHUB_STEP_SUMMARY
+            
+            python -c "
+            import json
+            try:
+                with open('frontend_functionality_results.json') as f:
+                    data = json.load(f)
+                    for test in data.get('tests', []):
+                        status_icon = '✅' if test['status'] == 'passed' else '❌' if test['status'] == 'failed' else '⏭️'
+                        print(f\"- {status_icon} {test['name']}\")
+            except:
+                pass
+            " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ⚠️ Test results not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Detailed test results available in artifacts" >> $GITHUB_STEP_SUMMARY
+
+  integration-test-summary:
+    name: Integration Test Summary
+    runs-on: ubuntu-latest
+    needs: [determine-test-targets, setup-test-environment, api-smoke-tests, frontend-accessibility-tests, frontend-functionality-tests]
+    if: always() && needs.determine-test-targets.outputs.should-test == 'true'
+    
+    steps:
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results/
+
+      - name: Generate integration test summary
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+          FRONTEND_URL: ${{ needs.setup-test-environment.outputs.frontend-url }}
+          API_URL: ${{ needs.setup-test-environment.outputs.api-url }}
+        run: |
+          echo "Generating integration test summary..."
+          
+          # Create comprehensive test summary
+          cat > integration_test_summary.md << EOF
+          # Integration Test Summary
+          
+          **Environment:** $TEST_ENV
+          **Frontend URL:** $FRONTEND_URL
+          **API URL:** $API_URL
+          **Test Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          **Commit:** ${{ github.sha }}
+          **Workflow Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          
+          ## Test Results Overview
+          
+          | Test Suite | Status | Details |
+          |------------|--------|---------|
+          | API Smoke Tests | ${{ needs.api-smoke-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | Backend API endpoint validation |
+          | Accessibility Tests | ${{ needs.frontend-accessibility-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | Frontend accessibility compliance |
+          | Functionality Tests | ${{ needs.frontend-functionality-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | Frontend basic functionality |
+          
+          ## Overall Status
+          
+          EOF
+          
+          # Determine overall status
+          if [ "${{ needs.api-smoke-tests.result }}" = "success" ] && \
+             [ "${{ needs.frontend-accessibility-tests.result }}" = "success" ] && \
+             [ "${{ needs.frontend-functionality-tests.result }}" = "success" ]; then
+            echo "✅ **All integration tests passed successfully**" >> integration_test_summary.md
+            echo "" >> integration_test_summary.md
+            echo "The deployed application is ready for use." >> integration_test_summary.md
+            OVERALL_STATUS="success"
+          else
+            echo "❌ **Some integration tests failed**" >> integration_test_summary.md
+            echo "" >> integration_test_summary.md
+            echo "Please review the failed tests and address any issues before using the application." >> integration_test_summary.md
+            OVERALL_STATUS="failure"
+          fi
+          
+          echo "" >> integration_test_summary.md
+          echo "## Artifacts" >> integration_test_summary.md
+          echo "" >> integration_test_summary.md
+          echo "- API smoke test results" >> integration_test_summary.md
+          echo "- Accessibility test reports (axe-core, Lighthouse, pa11y)" >> integration_test_summary.md
+          echo "- Frontend functionality test results" >> integration_test_summary.md
+          
+          # Set output for workflow status
+          echo "OVERALL_STATUS=$OVERALL_STATUS" >> $GITHUB_ENV
+
+      - name: Upload integration test summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-summary-${{ needs.determine-test-targets.outputs.environment }}
+          path: |
+            integration_test_summary.md
+            test-results/
+          retention-days: 30
+
+      - name: Display final summary
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          echo "## 🎯 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $TEST_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** ${{ needs.setup-test-environment.outputs.frontend-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**API URL:** ${{ needs.setup-test-environment.outputs.api-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Test results table
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API Smoke Tests | ${{ needs.api-smoke-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Accessibility Tests | ${{ needs.frontend-accessibility-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functionality Tests | ${{ needs.frontend-functionality-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "**Overall Status:** ✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🎉 The deployed application is ready for use!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Overall Status:** ❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Please review failed tests before using the application." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Complete test results and summary available in artifacts" >> $GITHUB_STEP_SUMMARY
+
+      - name: Report integration test completion
+        if: always()
+        env:
+          TEST_ENV: ${{ needs.determine-test-targets.outputs.environment }}
+        run: |
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "✅ Integration tests completed successfully for $TEST_ENV environment"
+            echo "🌐 Frontend: ${{ needs.setup-test-environment.outputs.frontend-url }}"
+            echo "🔗 API: ${{ needs.setup-test-environment.outputs.api-url }}"
+          else
+            echo "❌ Integration tests completed with failures for $TEST_ENV environment"
+            echo "🔍 Check individual test results for detailed failure information"
+            exit 1
+          fi

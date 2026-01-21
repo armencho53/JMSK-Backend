@@ -1,0 +1,145 @@
+name: Test Deployment Tagging
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_environment:
+        description: 'Test environment for tagging'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: write
+
+jobs:
+  test-tagging-logic:
+    name: Test Tagging Logic
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test version resolution logic
+        id: test-version
+        run: |
+          echo "Testing version resolution logic..."
+          
+          # Test package.json version extraction
+          if [ -f "package.json" ]; then
+            VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
+            echo "Found package.json version: $VERSION"
+          else
+            echo "No package.json found, testing fallback logic"
+            # Generate semantic version based on commit count and date
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            DATE_VERSION=$(date +%Y.%m.%d)
+            VERSION="v${DATE_VERSION}.${COMMIT_COUNT}"
+            echo "Generated fallback version: $VERSION"
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Test tag name generation
+        env:
+          TEST_ENV: ${{ inputs.test_environment }}
+          VERSION: ${{ steps.test-version.outputs.VERSION }}
+        run: |
+          echo "Testing tag name generation..."
+          
+          # Generate timestamp
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          
+          # Test backend tag name
+          BACKEND_TAG="deploy-backend-${TEST_ENV}-${VERSION}-${TIMESTAMP}"
+          echo "Backend tag would be: $BACKEND_TAG"
+          
+          # Test frontend tag name  
+          FRONTEND_TAG="deploy-frontend-${TEST_ENV}-${VERSION}-${TIMESTAMP}"
+          echo "Frontend tag would be: $FRONTEND_TAG"
+          
+          # Validate tag name format
+          if [[ $BACKEND_TAG =~ ^deploy-backend-(dev|staging|prod)-v?[0-9]+\.[0-9]+\.[0-9]+.*-[0-9]{8}-[0-9]{6}$ ]]; then
+            echo "✅ Backend tag format is valid"
+          else
+            echo "❌ Backend tag format is invalid: $BACKEND_TAG"
+            exit 1
+          fi
+          
+          if [[ $FRONTEND_TAG =~ ^deploy-frontend-(dev|staging|prod)-v?[0-9]+\.[0-9]+\.[0-9]+.*-[0-9]{8}-[0-9]{6}$ ]]; then
+            echo "✅ Frontend tag format is valid"
+          else
+            echo "❌ Frontend tag format is invalid: $FRONTEND_TAG"
+            exit 1
+          fi
+
+      - name: Test tag message generation
+        env:
+          TEST_ENV: ${{ inputs.test_environment }}
+          VERSION: ${{ steps.test-version.outputs.VERSION }}
+        run: |
+          echo "Testing tag message generation..."
+          
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TAG_NAME="deploy-backend-${TEST_ENV}-${VERSION}-${TIMESTAMP}"
+          
+          # Test tag message format
+          TAG_MESSAGE="Backend deployment to ${TEST_ENV}
+          
+          Deployment Details:
+          - Environment: ${TEST_ENV}
+          - Version: ${VERSION}
+          - Commit: ${{ github.sha }}
+          - Timestamp: ${TIMESTAMP}
+          - Stack: test-stack-name
+          - API URL: https://api-test.example.com
+          - Workflow: ${{ github.workflow }}
+          - Run ID: ${{ github.run_id }}"
+          
+          echo "Tag message would be:"
+          echo "$TAG_MESSAGE"
+          
+          # Validate message contains required fields
+          if echo "$TAG_MESSAGE" | grep -q "Environment: ${TEST_ENV}"; then
+            echo "✅ Tag message contains environment"
+          else
+            echo "❌ Tag message missing environment"
+            exit 1
+          fi
+          
+          if echo "$TAG_MESSAGE" | grep -q "Version: ${VERSION}"; then
+            echo "✅ Tag message contains version"
+          else
+            echo "❌ Tag message missing version"
+            exit 1
+          fi
+          
+          if echo "$TAG_MESSAGE" | grep -q "Commit: ${{ github.sha }}"; then
+            echo "✅ Tag message contains commit SHA"
+          else
+            echo "❌ Tag message missing commit SHA"
+            exit 1
+          fi
+
+      - name: Display test summary
+        env:
+          TEST_ENV: ${{ inputs.test_environment }}
+          VERSION: ${{ steps.test-version.outputs.VERSION }}
+        run: |
+          echo "## 🧪 Tagging Logic Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Environment:** $TEST_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Resolved Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tag Format Validation" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Tag naming convention follows specification" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Version resolution logic works correctly" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Tag message format includes all required fields" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** This is a test run - no actual tags were created." >> $GITHUB_STEP_SUMMARY

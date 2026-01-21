@@ -1,0 +1,829 @@
+name: Deploy Frontend
+
+on:
+  # Trigger after successful backend deployment
+  workflow_run:
+    workflows: ["Deploy Backend"]
+    types:
+      - completed
+    branches: [main]
+  
+  # Manual trigger for specific environments
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      api_url:
+        description: 'Backend API URL (optional - will auto-detect if not provided)'
+        required: false
+        type: string
+
+# Required for OIDC token exchange and repository tagging
+permissions:
+  id-token: write
+  contents: write  # Required for creating and pushing tags
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '18'
+
+jobs:
+  # Check if backend workflow was successful (for workflow_run trigger)
+  check-backend-success:
+    name: Check Backend Deployment Status
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run'
+    
+    outputs:
+      should-proceed: ${{ steps.check.outputs.should-proceed }}
+      backend-environment: ${{ steps.check.outputs.backend-environment }}
+      backend-api-url: ${{ steps.check.outputs.backend-api-url }}
+    
+    steps:
+      - name: Check backend workflow success
+        id: check
+        run: |
+          if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "should-proceed=true" >> $GITHUB_OUTPUT
+            echo "Backend deployment was successful, proceeding with frontend deployment"
+            
+            # Try to extract environment and API URL from backend workflow
+            # This is a simplified approach - in practice, you might use artifacts or API calls
+            echo "backend-environment=prod" >> $GITHUB_OUTPUT
+            echo "backend-api-url=" >> $GITHUB_OUTPUT  # Will be determined later
+          else
+            echo "should-proceed=false" >> $GITHUB_OUTPUT
+            echo "Backend deployment failed, skipping frontend deployment"
+          fi
+
+  determine-environment:
+    name: Determine Deployment Environment
+    runs-on: ubuntu-latest
+    needs: [check-backend-success]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.check-backend-success.outputs.should-proceed == 'true')
+    
+    outputs:
+      environment: ${{ steps.env-logic.outputs.environment }}
+      should-deploy: ${{ steps.env-logic.outputs.should-deploy }}
+      api-url: ${{ steps.env-logic.outputs.api-url }}
+    
+    steps:
+      - name: Determine environment and API URL
+        id: env-logic
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual dispatch - use selected environment and provided API URL
+            ENVIRONMENT="${{ inputs.environment }}"
+            API_URL="${{ inputs.api_url }}"
+            SHOULD_DEPLOY="true"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Automatic deployment after backend - determine from backend environment
+            ENVIRONMENT="${{ needs.check-backend-success.outputs.backend-environment }}"
+            API_URL="${{ needs.check-backend-success.outputs.backend-api-url }}"
+            SHOULD_DEPLOY="true"
+          else
+            # Other events - no deployment
+            ENVIRONMENT="dev"
+            API_URL=""
+            SHOULD_DEPLOY="false"
+          fi
+          
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "should-deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          echo "Determined environment: $ENVIRONMENT (deploy: $SHOULD_DEPLOY)"
+          echo "API URL: $API_URL"
+
+  test:
+    name: Run Frontend Tests
+    runs-on: ubuntu-latest
+    needs: [determine-environment]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies and test artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            frontend/node_modules/.cache
+            frontend/.vite
+            frontend/coverage
+          key: ${{ runner.os }}-node-test-${{ env.NODE_VERSION }}-${{ hashFiles('frontend/package-lock.json', 'frontend/jest.config.js') }}
+          restore-keys: |
+            ${{ runner.os }}-node-test-${{ env.NODE_VERSION }}-
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          # Check if cache was restored
+          if [ -d ~/.npm ]; then
+            echo "✅ npm cache restored successfully"
+            echo "Cache size: $(du -sh ~/.npm | cut -f1)"
+          else
+            echo "📦 Building fresh npm cache"
+          fi
+          
+          # Use npm ci for clean, reproducible installs
+          npm ci --prefer-offline --no-audit
+          
+          echo "Dependencies installed for testing"
+
+      - name: Run tests with coverage
+        working-directory: frontend
+        run: |
+          echo "🧪 Running frontend tests with coverage..."
+          
+          # Check if test cache exists
+          if [ -d coverage ]; then
+            echo "♻️ Previous coverage data found"
+          fi
+          
+          if npm run test:coverage -- --watchAll=false --passWithNoTests; then
+            echo "✅ Frontend tests completed successfully"
+          else
+            echo "❌ Frontend tests failed"
+            echo "🔍 Test failures detected - check the output above for details"
+            
+            # Add test failure summary
+            echo "## ❌ Frontend Tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Frontend tests failed during execution. Check the test output above for specific failure details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Workflow:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+            
+            exit 1
+          fi
+
+      - name: Upload test results and coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-test-results-${{ github.run_number }}
+          path: |
+            frontend/coverage/
+            frontend/junit.xml
+          retention-days: 30
+
+      - name: Upload coverage to workflow summary
+        if: always()
+        working-directory: frontend
+        run: |
+          if [ -d coverage ]; then
+            echo "## 📊 Frontend Test Coverage" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract coverage percentage from coverage summary
+            if [ -f coverage/coverage-summary.json ]; then
+              COVERAGE=$(node -e "
+                try {
+                  const summary = require('./coverage/coverage-summary.json');
+                  const lines = summary.total.lines.pct;
+                  console.log(lines + '%');
+                } catch (e) {
+                  console.log('Coverage data not available');
+                }
+              ")
+              echo "**Overall Coverage:** $COVERAGE" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Coverage:** Report generated" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📁 Detailed coverage report available in artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  build:
+    name: Build React Application
+    runs-on: ubuntu-latest
+    needs: [determine-environment, test]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies and build artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            frontend/node_modules/.cache
+            frontend/.vite
+            frontend/dist
+          key: ${{ runner.os }}-node-build-${{ env.NODE_VERSION }}-${{ hashFiles('frontend/package-lock.json', 'frontend/vite.config.ts', 'frontend/tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-build-${{ env.NODE_VERSION }}-
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          # Check if cache was restored
+          if [ -d ~/.npm ]; then
+            echo "✅ npm cache restored successfully"
+            echo "Cache size: $(du -sh ~/.npm | cut -f1)"
+          else
+            echo "📦 Building fresh npm cache"
+          fi
+          
+          # Use npm ci for clean, reproducible installs
+          npm ci --prefer-offline --no-audit
+          
+          echo "Dependencies installed for build"
+
+      - name: Set environment-specific variables
+        id: env-vars
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          PROVIDED_API_URL: ${{ needs.determine-environment.outputs.api-url }}
+        run: |
+          # Set environment-specific AWS role ARNs and resource names
+          case "$DEPLOY_ENV" in
+            "dev")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_DEV || vars.AWS_ROLE_ARN }}"
+              S3_BUCKET="${{ vars.S3_BUCKET_DEV || format('jewelry-frontend-{0}', 'dev') }}"
+              CLOUDFRONT_DISTRIBUTION="${{ vars.CLOUDFRONT_DISTRIBUTION_DEV }}"
+              ;;
+            "staging")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_STAGING || vars.AWS_ROLE_ARN }}"
+              S3_BUCKET="${{ vars.S3_BUCKET_STAGING || format('jewelry-frontend-{0}', 'staging') }}"
+              CLOUDFRONT_DISTRIBUTION="${{ vars.CLOUDFRONT_DISTRIBUTION_STAGING }}"
+              ;;
+            "prod")
+              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD || vars.AWS_ROLE_ARN }}"
+              S3_BUCKET="${{ vars.S3_BUCKET_PROD || format('jewelry-frontend-{0}', 'prod') }}"
+              CLOUDFRONT_DISTRIBUTION="${{ vars.CLOUDFRONT_DISTRIBUTION_PROD }}"
+              ;;
+            *)
+              echo "Unknown environment: $DEPLOY_ENV"
+              exit 1
+              ;;
+          esac
+          
+          # If API URL not provided, try to determine from backend stack
+          if [ -z "$PROVIDED_API_URL" ]; then
+            API_URL="https://api-$DEPLOY_ENV.jewelry-manufacturing.com"  # Default pattern
+          else
+            API_URL="$PROVIDED_API_URL"
+          fi
+          
+          echo "aws-role-arn=$AWS_ROLE_ARN" >> $GITHUB_OUTPUT
+          echo "s3-bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+          echo "cloudfront-distribution=$CLOUDFRONT_DISTRIBUTION" >> $GITHUB_OUTPUT
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          echo "Using AWS Role: $AWS_ROLE_ARN"
+          echo "Using S3 Bucket: $S3_BUCKET"
+          echo "Using API URL: $API_URL"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.env-vars.outputs.aws-role-arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Frontend-Build-${{ needs.determine-environment.outputs.environment }}
+
+      - name: Auto-detect API URL from backend stack
+        id: detect-api
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          PROVIDED_API_URL: ${{ steps.env-vars.outputs.api-url }}
+        run: |
+          # If API URL was provided, use it
+          if [ -n "$PROVIDED_API_URL" ] && [ "$PROVIDED_API_URL" != "https://api-$DEPLOY_ENV.jewelry-manufacturing.com" ]; then
+            FINAL_API_URL="$PROVIDED_API_URL"
+            echo "Using provided API URL: $FINAL_API_URL"
+          else
+            # Try to get API URL from backend CloudFormation stack
+            STACK_NAME="jewelry-backend-$DEPLOY_ENV"
+            
+            echo "Attempting to get API URL from stack: $STACK_NAME"
+            
+            API_URL=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$API_URL" ] && [ "$API_URL" != "None" ]; then
+              FINAL_API_URL="$API_URL"
+              echo "Successfully retrieved API URL from CloudFormation: $FINAL_API_URL"
+            else
+              # Fallback to default pattern
+              FINAL_API_URL="https://api-$DEPLOY_ENV.jewelry-manufacturing.com"
+              echo "Could not retrieve API URL from CloudFormation, using default: $FINAL_API_URL"
+            fi
+          fi
+          
+          echo "final-api-url=$FINAL_API_URL" >> $GITHUB_OUTPUT
+
+      - name: Build React application
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ steps.detect-api.outputs.final-api-url }}
+          VITE_ENVIRONMENT: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          echo "🔨 Building React application with API URL: $VITE_API_URL"
+          
+          # Check if build cache exists
+          if [ -d dist ]; then
+            echo "♻️ Previous build artifacts found in cache"
+            echo "Cached build size: $(du -sh dist | cut -f1)"
+          fi
+          
+          # Build the application with Vite caching
+          if npm run build; then
+            echo "✅ React build completed successfully"
+            
+            # Verify build output
+            if [ ! -d "dist" ]; then
+              echo "❌ ERROR: Build output directory 'dist' not found"
+              exit 1
+            fi
+            
+            # Check if essential files exist
+            if [ ! -f "dist/index.html" ]; then
+              echo "❌ ERROR: index.html not found in build output"
+              exit 1
+            fi
+            
+            echo "📊 Final build size: $(du -sh dist | cut -f1)"
+            echo "📁 Build contents:"
+            ls -la dist/
+          else
+            echo "❌ React build failed"
+            echo "🔍 Check the build output above for specific error details"
+            
+            # Add build failure summary
+            echo "## ❌ Frontend Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "React build failed during compilation. Check the build output above for specific error details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**API URL:** $VITE_API_URL" >> $GITHUB_STEP_SUMMARY
+            echo "**Environment:** ${{ needs.determine-environment.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Workflow:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+            
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-${{ needs.determine-environment.outputs.environment }}
+          path: frontend/dist/
+          retention-days: 7
+
+    outputs:
+      aws-role-arn: ${{ steps.env-vars.outputs.aws-role-arn }}
+      s3-bucket: ${{ steps.env-vars.outputs.s3-bucket }}
+      cloudfront-distribution: ${{ steps.env-vars.outputs.cloudfront-distribution }}
+      api-url: ${{ steps.detect-api.outputs.final-api-url }}
+
+  deploy:
+    name: Deploy to S3 and CloudFront
+    runs-on: ubuntu-latest
+    needs: [determine-environment, test, build]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build-${{ needs.determine-environment.outputs.environment }}
+          path: frontend/dist/
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.build.outputs.aws-role-arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Frontend-Deploy-${{ needs.determine-environment.outputs.environment }}
+
+      - name: Validate deployment prerequisites
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          S3_BUCKET: ${{ needs.build.outputs.s3-bucket }}
+        run: |
+          echo "Validating deployment prerequisites for environment: $DEPLOY_ENV"
+          
+          # Check if build artifacts exist
+          if [ ! -d "frontend/dist" ]; then
+            echo "ERROR: Build artifacts not found"
+            exit 1
+          fi
+          
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "ERROR: index.html not found in build artifacts"
+            exit 1
+          fi
+          
+          # Check if S3 bucket exists
+          if ! aws s3 ls "s3://$S3_BUCKET" >/dev/null 2>&1; then
+            echo "ERROR: S3 bucket $S3_BUCKET does not exist or is not accessible"
+            exit 1
+          fi
+          
+          echo "Prerequisites validation passed"
+
+      - name: Deploy to S3 bucket
+        env:
+          S3_BUCKET: ${{ needs.build.outputs.s3-bucket }}
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          echo "📤 Deploying to S3 bucket: $S3_BUCKET"
+          
+          # Sync files to S3 with appropriate cache headers
+          if aws s3 sync frontend/dist/ "s3://$S3_BUCKET/" \
+            --delete \
+            --cache-control "public, max-age=31536000" \
+            --exclude "*.html" \
+            --exclude "*.json"; then
+            echo "✅ Static assets uploaded successfully"
+          else
+            echo "❌ Failed to upload static assets to S3"
+            exit 1
+          fi
+          
+          # Upload HTML and JSON files with shorter cache duration
+          if aws s3 sync frontend/dist/ "s3://$S3_BUCKET/" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --include "*.html" \
+            --include "*.json"; then
+            echo "✅ HTML and JSON files uploaded successfully"
+          else
+            echo "❌ Failed to upload HTML/JSON files to S3"
+            exit 1
+          fi
+          
+          # Set proper content types for specific files
+          if aws s3 cp "s3://$S3_BUCKET/index.html" "s3://$S3_BUCKET/index.html" \
+            --metadata-directive REPLACE \
+            --content-type "text/html" \
+            --cache-control "public, max-age=0, must-revalidate"; then
+            echo "✅ Content types configured successfully"
+          else
+            echo "⚠️ Warning: Failed to set content type for index.html (deployment may still work)"
+          fi
+          
+          echo "✅ S3 deployment completed successfully"
+
+      - name: Get CloudFront distribution ID
+        id: cloudfront
+        env:
+          CLOUDFRONT_DISTRIBUTION: ${{ needs.build.outputs.cloudfront-distribution }}
+          S3_BUCKET: ${{ needs.build.outputs.s3-bucket }}
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          # If CloudFront distribution ID is provided, use it
+          if [ -n "$CLOUDFRONT_DISTRIBUTION" ]; then
+            DISTRIBUTION_ID="$CLOUDFRONT_DISTRIBUTION"
+            echo "Using provided CloudFront distribution: $DISTRIBUTION_ID"
+          else
+            # Try to find CloudFront distribution by S3 bucket origin
+            echo "Searching for CloudFront distribution with S3 bucket origin: $S3_BUCKET"
+            
+            DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Origins.Items[?DomainName=='$S3_BUCKET.s3.amazonaws.com']].Id" \
+              --output text | head -n1)
+            
+            if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
+              echo "Found CloudFront distribution: $DISTRIBUTION_ID"
+            else
+              # Try alternative S3 domain format
+              DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+                --query "DistributionList.Items[?Origins.Items[?DomainName=='$S3_BUCKET.s3.${{ env.AWS_REGION }}.amazonaws.com']].Id" \
+                --output text | head -n1)
+              
+              if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
+                echo "Found CloudFront distribution with regional domain: $DISTRIBUTION_ID"
+              else
+                echo "WARNING: Could not find CloudFront distribution for bucket $S3_BUCKET"
+                echo "Skipping CloudFront cache invalidation"
+                DISTRIBUTION_ID=""
+              fi
+            fi
+          fi
+          
+          echo "distribution-id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+
+      - name: Invalidate CloudFront cache
+        if: steps.cloudfront.outputs.distribution-id != ''
+        env:
+          DISTRIBUTION_ID: ${{ steps.cloudfront.outputs.distribution-id }}
+        run: |
+          echo "Invalidating CloudFront cache for distribution: $DISTRIBUTION_ID"
+          
+          # Create invalidation for all files
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          
+          echo "Created invalidation: $INVALIDATION_ID"
+          
+          # Wait for invalidation to complete (optional - can be removed for faster deployments)
+          echo "Waiting for invalidation to complete..."
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --id "$INVALIDATION_ID"
+          
+          echo "CloudFront cache invalidation completed"
+
+      - name: Get deployment outputs
+        id: outputs
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          S3_BUCKET: ${{ needs.build.outputs.s3-bucket }}
+          DISTRIBUTION_ID: ${{ steps.cloudfront.outputs.distribution-id }}
+        run: |
+          # Determine the frontend URL
+          if [ -n "$DISTRIBUTION_ID" ]; then
+            # Get CloudFront domain name
+            CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
+              --id "$DISTRIBUTION_ID" \
+              --query 'Distribution.DomainName' \
+              --output text)
+            
+            FRONTEND_URL="https://$CLOUDFRONT_DOMAIN"
+          else
+            # Fallback to S3 website URL
+            FRONTEND_URL="https://$S3_BUCKET.s3-website-${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+          
+          echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_OUTPUT
+          echo "DISTRIBUTION_ID=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+          echo "Successfully determined frontend URL: $FRONTEND_URL"
+
+      - name: Validate deployment
+        env:
+          FRONTEND_URL: ${{ steps.outputs.outputs.FRONTEND_URL }}
+        run: |
+          echo "Validating deployment at: $FRONTEND_URL"
+          
+          # Wait a moment for the deployment to be ready
+          sleep 15
+          
+          # Test frontend accessibility
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL" || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Frontend is accessible (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️ Frontend returned HTTP $HTTP_STATUS"
+            echo "This may be expected during CloudFront propagation"
+          fi
+          
+          # Test if it's serving the React app (look for typical React patterns)
+          CONTENT=$(curl -s "$FRONTEND_URL" | head -c 1000 || echo "")
+          if echo "$CONTENT" | grep -q "react\|React\|<div id=\"root\""; then
+            echo "✅ React application detected in response"
+          else
+            echo "⚠️ React application patterns not detected (may still be propagating)"
+          fi
+          
+          echo "Frontend URL: $FRONTEND_URL"
+          echo "Deployment validation completed"
+
+      - name: Tag repository with deployment version
+        id: tag-repo
+        if: success()
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          FRONTEND_URL: ${{ steps.outputs.outputs.FRONTEND_URL }}
+          S3_BUCKET: ${{ steps.outputs.outputs.S3_BUCKET }}
+          DISTRIBUTION_ID: ${{ steps.outputs.outputs.DISTRIBUTION_ID }}
+          API_URL: ${{ needs.build.outputs.api-url }}
+        run: |
+          # Generate version information
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          
+          # Extract version from frontend package.json
+          if [ -f "frontend/package.json" ]; then
+            VERSION=$(node -p "require('./frontend/package.json').version" 2>/dev/null || echo "1.0.0")
+          else
+            # Generate semantic version based on commit count and date
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            DATE_VERSION=$(date +%Y.%m.%d)
+            VERSION="v${DATE_VERSION}.${COMMIT_COUNT}"
+          fi
+          
+          # Create deployment tag following the specified naming convention
+          # Format: deploy-{component}-{environment}-{version}-{timestamp}
+          TAG_NAME="deploy-frontend-${DEPLOY_ENV}-${VERSION}-${TIMESTAMP}"
+          
+          # Configure git for tagging
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Create annotated tag with comprehensive deployment information
+          TAG_MESSAGE="Frontend deployment to ${DEPLOY_ENV}
+          
+          Deployment Details:
+          - Environment: ${DEPLOY_ENV}
+          - Version: ${VERSION}
+          - Commit: ${{ github.sha }}
+          - Timestamp: ${TIMESTAMP}
+          - S3 Bucket: ${S3_BUCKET}
+          - CloudFront: ${DISTRIBUTION_ID}
+          - Frontend URL: ${FRONTEND_URL}
+          - API URL: ${API_URL}
+          - Workflow: ${{ github.workflow }}
+          - Run ID: ${{ github.run_id }}"
+          
+          git tag -a "$TAG_NAME" -m "$TAG_MESSAGE"
+          
+          # Push the tag to repository
+          git push origin "$TAG_NAME"
+          
+          echo "✅ Created deployment tag: $TAG_NAME"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          # Add tag information to workflow summary
+          echo "## 🏷️ Frontend Deployment Tag Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag Name:** \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cache statistics and cleanup
+        if: always()
+        working-directory: frontend
+        run: |
+          echo "## 📊 Frontend Cache Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # npm cache statistics
+          if [ -d ~/.npm ]; then
+            NPM_CACHE_SIZE=$(du -sh ~/.npm | cut -f1)
+            echo "**npm Cache:** $NPM_CACHE_SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Vite cache statistics
+          if [ -d .vite ]; then
+            VITE_CACHE_SIZE=$(du -sh .vite | cut -f1)
+            echo "**Vite Cache:** $VITE_CACHE_SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Node modules cache
+          if [ -d node_modules/.cache ]; then
+            NODE_CACHE_SIZE=$(du -sh node_modules/.cache | cut -f1)
+            echo "**Node Modules Cache:** $NODE_CACHE_SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Display deployment summary
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          echo "## 🎉 Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**S3 Bucket:** ${{ steps.outputs.outputs.S3_BUCKET }}" >> $GITHUB_STEP_SUMMARY
+          echo "**CloudFront Distribution:** ${{ steps.outputs.outputs.DISTRIBUTION_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** ${{ steps.outputs.outputs.FRONTEND_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "**API URL:** ${{ needs.build.outputs.api-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Tag:** ${{ steps.tag-repo.outputs.TAG_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "- Test application: [\`${{ steps.outputs.outputs.FRONTEND_URL }}\`](${{ steps.outputs.outputs.FRONTEND_URL }})" >> $GITHUB_STEP_SUMMARY
+          echo "- API documentation: [\`${{ needs.build.outputs.api-url }}/docs\`](${{ needs.build.outputs.api-url }}/docs)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Report deployment success
+        if: success()
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          echo "✅ Frontend deployment to $DEPLOY_ENV completed successfully"
+          echo "🌐 Frontend URL: ${{ steps.outputs.outputs.FRONTEND_URL }}"
+          echo "🔗 API URL: ${{ needs.build.outputs.api-url }}"
+          echo "🏷️ Deployment Tag: ${{ steps.tag-repo.outputs.TAG_NAME }}"
+          echo "☁️ CloudFront Distribution: ${{ steps.outputs.outputs.DISTRIBUTION_ID }}"
+          
+          # Set workflow status for external monitoring
+          echo "DEPLOYMENT_STATUS=success" >> $GITHUB_ENV
+          echo "DEPLOYMENT_URL=${{ steps.outputs.outputs.FRONTEND_URL }}" >> $GITHUB_ENV
+          echo "DEPLOYMENT_ENVIRONMENT=$DEPLOY_ENV" >> $GITHUB_ENV
+
+      - name: Report deployment failure
+        if: failure()
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          echo "❌ Frontend deployment to $DEPLOY_ENV failed"
+          echo "🔍 Check the workflow logs for detailed error information"
+          echo "📋 Failed at step: ${{ job.status }}"
+          echo "🔄 Commit: ${{ github.sha }}"
+          
+          # Add failure summary to workflow
+          echo "## ❌ Frontend Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check the workflow logs above for specific error messages" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify AWS credentials and S3 bucket permissions" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check CloudFront distribution configuration" >> $GITHUB_STEP_SUMMARY
+          echo "4. Validate build artifacts were created successfully" >> $GITHUB_STEP_SUMMARY
+          echo "5. Ensure backend API URL is accessible" >> $GITHUB_STEP_SUMMARY
+          
+          # Set workflow status for external monitoring
+          echo "DEPLOYMENT_STATUS=failure" >> $GITHUB_ENV
+          echo "DEPLOYMENT_ENVIRONMENT=$DEPLOY_ENV" >> $GITHUB_ENV
+          
+          exit 1
+
+    outputs:
+      frontend-url: ${{ steps.outputs.outputs.FRONTEND_URL }}
+      s3-bucket: ${{ steps.outputs.outputs.S3_BUCKET }}
+      cloudfront-distribution: ${{ steps.outputs.outputs.DISTRIBUTION_ID }}
+      api-url: ${{ needs.build.outputs.api-url }}
+      deployment-tag: ${{ steps.tag-repo.outputs.TAG_NAME }}
+      environment: ${{ needs.determine-environment.outputs.environment }}
+
+  # Notification jobs for deployment events
+  notify-deployment-started:
+    name: Notify Deployment Started
+    uses: ./.github/workflows/notify-deployment.yml
+    needs: [determine-environment]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+    with:
+      deployment_status: "started"
+      deployment_environment: ${{ needs.determine-environment.outputs.environment }}
+      deployment_component: "frontend"
+      commit_sha: ${{ github.sha }}
+      workflow_run_id: ${{ github.run_id }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
+      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
+
+  notify-deployment-success:
+    name: Notify Deployment Success
+    uses: ./.github/workflows/notify-deployment.yml
+    needs: [deploy, determine-environment]
+    if: success()
+    with:
+      deployment_status: "success"
+      deployment_environment: ${{ needs.determine-environment.outputs.environment }}
+      deployment_component: "frontend"
+      deployment_url: ${{ needs.deploy.outputs.frontend-url }}
+      api_url: ${{ needs.deploy.outputs.api-url }}
+      commit_sha: ${{ github.sha }}
+      workflow_run_id: ${{ github.run_id }}
+      deployment_tag: ${{ needs.deploy.outputs.deployment-tag }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
+      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
+
+  notify-deployment-failure:
+    name: Notify Deployment Failure
+    uses: ./.github/workflows/notify-deployment.yml
+    needs: [deploy, determine-environment]
+    if: failure()
+    with:
+      deployment_status: "failure"
+      deployment_environment: ${{ needs.determine-environment.outputs.environment }}
+      deployment_component: "frontend"
+      commit_sha: ${{ github.sha }}
+      workflow_run_id: ${{ github.run_id }}
+      error_details: "Frontend deployment failed. Check workflow logs for details."
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
+      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}

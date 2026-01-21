@@ -1,0 +1,480 @@
+name: Send Deployment Notifications
+
+on:
+  workflow_call:
+    inputs:
+      deployment_status:
+        description: 'Deployment status (success, failure, started)'
+        required: true
+        type: string
+      deployment_environment:
+        description: 'Deployment environment (dev, staging, prod)'
+        required: true
+        type: string
+      deployment_component:
+        description: 'Component deployed (backend, frontend, full-stack)'
+        required: true
+        type: string
+      deployment_url:
+        description: 'URL of the deployed application'
+        required: false
+        type: string
+      api_url:
+        description: 'Backend API URL'
+        required: false
+        type: string
+      commit_sha:
+        description: 'Git commit SHA'
+        required: true
+        type: string
+      workflow_run_id:
+        description: 'GitHub workflow run ID'
+        required: true
+        type: string
+      deployment_tag:
+        description: 'Git tag created for deployment'
+        required: false
+        type: string
+      error_details:
+        description: 'Error details for failed deployments'
+        required: false
+        type: string
+    secrets:
+      SLACK_WEBHOOK_URL:
+        description: 'Slack webhook URL for notifications'
+        required: false
+      NOTIFICATION_EMAIL_API_KEY:
+        description: 'API key for email notification service'
+        required: false
+      NOTIFICATION_EMAIL_ENDPOINT:
+        description: 'Email notification service endpoint'
+        required: false
+
+env:
+  GITHUB_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+
+jobs:
+  determine-notification-scope:
+    name: Determine Notification Requirements
+    runs-on: ubuntu-latest
+    
+    outputs:
+      should-notify-slack: ${{ steps.scope.outputs.should-notify-slack }}
+      should-notify-email: ${{ steps.scope.outputs.should-notify-email }}
+      notification-level: ${{ steps.scope.outputs.notification-level }}
+      is-critical: ${{ steps.scope.outputs.is-critical }}
+    
+    steps:
+      - name: Determine notification scope
+        id: scope
+        env:
+          STATUS: ${{ inputs.deployment_status }}
+          ENVIRONMENT: ${{ inputs.deployment_environment }}
+          COMPONENT: ${{ inputs.deployment_component }}
+        run: |
+          # Determine if this is a critical deployment
+          IS_CRITICAL="false"
+          if [ "$ENVIRONMENT" = "prod" ] || [ "$STATUS" = "failure" ]; then
+            IS_CRITICAL="true"
+          fi
+          
+          # Determine notification level based on status and environment
+          case "$STATUS" in
+            "success")
+              if [ "$ENVIRONMENT" = "prod" ]; then
+                NOTIFICATION_LEVEL="high"
+              else
+                NOTIFICATION_LEVEL="medium"
+              fi
+              ;;
+            "failure")
+              NOTIFICATION_LEVEL="critical"
+              ;;
+            "started")
+              if [ "$ENVIRONMENT" = "prod" ]; then
+                NOTIFICATION_LEVEL="medium"
+              else
+                NOTIFICATION_LEVEL="low"
+              fi
+              ;;
+            *)
+              NOTIFICATION_LEVEL="low"
+              ;;
+          esac
+          
+          # Determine which notification channels to use
+          SHOULD_NOTIFY_SLACK="false"
+          SHOULD_NOTIFY_EMAIL="false"
+          
+          # Slack notifications for critical deployments or production
+          if [ "$IS_CRITICAL" = "true" ] || [ "$ENVIRONMENT" = "prod" ]; then
+            SHOULD_NOTIFY_SLACK="true"
+          fi
+          
+          # Email notifications only for critical failures
+          if [ "$STATUS" = "failure" ] && [ "$ENVIRONMENT" = "prod" ]; then
+            SHOULD_NOTIFY_EMAIL="true"
+          fi
+          
+          echo "is-critical=$IS_CRITICAL" >> $GITHUB_OUTPUT
+          echo "notification-level=$NOTIFICATION_LEVEL" >> $GITHUB_OUTPUT
+          echo "should-notify-slack=$SHOULD_NOTIFY_SLACK" >> $GITHUB_OUTPUT
+          echo "should-notify-email=$SHOULD_NOTIFY_EMAIL" >> $GITHUB_OUTPUT
+          
+          echo "Notification scope determined:"
+          echo "- Critical: $IS_CRITICAL"
+          echo "- Level: $NOTIFICATION_LEVEL"
+          echo "- Slack: $SHOULD_NOTIFY_SLACK"
+          echo "- Email: $SHOULD_NOTIFY_EMAIL"
+
+  prepare-notification-payload:
+    name: Prepare Notification Content
+    runs-on: ubuntu-latest
+    needs: [determine-notification-scope]
+    
+    outputs:
+      slack-payload: ${{ steps.payload.outputs.slack-payload }}
+      email-payload: ${{ steps.payload.outputs.email-payload }}
+      notification-title: ${{ steps.payload.outputs.notification-title }}
+    
+    steps:
+      - name: Generate notification content
+        id: payload
+        env:
+          STATUS: ${{ inputs.deployment_status }}
+          ENVIRONMENT: ${{ inputs.deployment_environment }}
+          COMPONENT: ${{ inputs.deployment_component }}
+          DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+          API_URL: ${{ inputs.api_url }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          WORKFLOW_RUN_ID: ${{ inputs.workflow_run_id }}
+          DEPLOYMENT_TAG: ${{ inputs.deployment_tag }}
+          ERROR_DETAILS: ${{ inputs.error_details }}
+          IS_CRITICAL: ${{ needs.determine-notification-scope.outputs.is-critical }}
+        run: |
+          # Generate timestamp
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
+          
+          # Determine status emoji and color
+          case "$STATUS" in
+            "success")
+              STATUS_EMOJI="✅"
+              STATUS_COLOR="good"
+              STATUS_TEXT="Success"
+              ;;
+            "failure")
+              STATUS_EMOJI="❌"
+              STATUS_COLOR="danger"
+              STATUS_TEXT="Failed"
+              ;;
+            "started")
+              STATUS_EMOJI="🚀"
+              STATUS_COLOR="warning"
+              STATUS_TEXT="Started"
+              ;;
+            *)
+              STATUS_EMOJI="ℹ️"
+              STATUS_COLOR="#439FE0"
+              STATUS_TEXT="Unknown"
+              ;;
+          esac
+          
+          # Generate notification title
+          NOTIFICATION_TITLE="$STATUS_EMOJI $COMPONENT deployment to $ENVIRONMENT $STATUS_TEXT"
+          
+          # Build workflow URL
+          WORKFLOW_URL="${GITHUB_REPOSITORY_URL}/actions/runs/$WORKFLOW_RUN_ID"
+          
+          # Generate Slack payload
+          SLACK_PAYLOAD=$(cat << EOF
+          {
+            "text": "$NOTIFICATION_TITLE",
+            "attachments": [
+              {
+                "color": "$STATUS_COLOR",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "$ENVIRONMENT",
+                    "short": true
+                  },
+                  {
+                    "title": "Component",
+                    "value": "$COMPONENT",
+                    "short": true
+                  },
+                  {
+                    "title": "Status",
+                    "value": "$STATUS_TEXT",
+                    "short": true
+                  },
+                  {
+                    "title": "Commit",
+                    "value": "<${GITHUB_REPOSITORY_URL}/commit/$COMMIT_SHA|$SHORT_SHA>",
+                    "short": true
+                  }
+          EOF
+          )
+          
+          # Add deployment URL if available
+          if [ -n "$DEPLOYMENT_URL" ]; then
+            SLACK_PAYLOAD=$(echo "$SLACK_PAYLOAD" | sed '$s/$/,/')
+            SLACK_PAYLOAD="$SLACK_PAYLOAD
+                  {
+                    \"title\": \"Application URL\",
+                    \"value\": \"<$DEPLOYMENT_URL|$DEPLOYMENT_URL>\",
+                    \"short\": false
+                  }"
+          fi
+          
+          # Add API URL if available
+          if [ -n "$API_URL" ]; then
+            SLACK_PAYLOAD=$(echo "$SLACK_PAYLOAD" | sed '$s/$/,/')
+            SLACK_PAYLOAD="$SLACK_PAYLOAD
+                  {
+                    \"title\": \"API URL\",
+                    \"value\": \"<$API_URL|$API_URL>\",
+                    \"short\": false
+                  }"
+          fi
+          
+          # Add deployment tag if available
+          if [ -n "$DEPLOYMENT_TAG" ]; then
+            SLACK_PAYLOAD=$(echo "$SLACK_PAYLOAD" | sed '$s/$/,/')
+            SLACK_PAYLOAD="$SLACK_PAYLOAD
+                  {
+                    \"title\": \"Deployment Tag\",
+                    \"value\": \"$DEPLOYMENT_TAG\",
+                    \"short\": true
+                  }"
+          fi
+          
+          # Add error details for failures
+          if [ "$STATUS" = "failure" ] && [ -n "$ERROR_DETAILS" ]; then
+            SLACK_PAYLOAD=$(echo "$SLACK_PAYLOAD" | sed '$s/$/,/')
+            SLACK_PAYLOAD="$SLACK_PAYLOAD
+                  {
+                    \"title\": \"Error Details\",
+                    \"value\": \"$ERROR_DETAILS\",
+                    \"short\": false
+                  }"
+          fi
+          
+          # Close Slack payload
+          SLACK_PAYLOAD="$SLACK_PAYLOAD
+                ],
+                \"footer\": \"GitHub Actions\",
+                \"footer_icon\": \"https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png\",
+                \"ts\": $(date +%s),
+                \"actions\": [
+                  {
+                    \"type\": \"button\",
+                    \"text\": \"View Workflow\",
+                    \"url\": \"$WORKFLOW_URL\"
+                  }
+                ]
+              }
+            ]
+          }"
+          
+          # Generate email payload
+          EMAIL_SUBJECT="[$ENVIRONMENT] $COMPONENT Deployment $STATUS_TEXT"
+          EMAIL_BODY="Deployment Notification
+          
+          Status: $STATUS_TEXT $STATUS_EMOJI
+          Environment: $ENVIRONMENT
+          Component: $COMPONENT
+          Timestamp: $TIMESTAMP
+          Commit: $SHORT_SHA ($COMMIT_SHA)
+          
+          URLs:
+          - Workflow: $WORKFLOW_URL"
+          
+          if [ -n "$DEPLOYMENT_URL" ]; then
+            EMAIL_BODY="$EMAIL_BODY
+          - Application: $DEPLOYMENT_URL"
+          fi
+          
+          if [ -n "$API_URL" ]; then
+            EMAIL_BODY="$EMAIL_BODY
+          - API: $API_URL"
+          fi
+          
+          if [ -n "$DEPLOYMENT_TAG" ]; then
+            EMAIL_BODY="$EMAIL_BODY
+          
+          Deployment Tag: $DEPLOYMENT_TAG"
+          fi
+          
+          if [ "$STATUS" = "failure" ] && [ -n "$ERROR_DETAILS" ]; then
+            EMAIL_BODY="$EMAIL_BODY
+          
+          Error Details:
+          $ERROR_DETAILS"
+          fi
+          
+          EMAIL_PAYLOAD=$(cat << EOF
+          {
+            "subject": "$EMAIL_SUBJECT",
+            "body": "$EMAIL_BODY",
+            "priority": "$IS_CRITICAL"
+          }
+          EOF
+          )
+          
+          # Output payloads (encode for GitHub Actions)
+          echo "slack-payload<<EOF" >> $GITHUB_OUTPUT
+          echo "$SLACK_PAYLOAD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "email-payload<<EOF" >> $GITHUB_OUTPUT
+          echo "$EMAIL_PAYLOAD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "notification-title=$NOTIFICATION_TITLE" >> $GITHUB_OUTPUT
+
+  send-slack-notification:
+    name: Send Slack Notification
+    runs-on: ubuntu-latest
+    needs: [determine-notification-scope, prepare-notification-payload]
+    if: needs.determine-notification-scope.outputs.should-notify-slack == 'true'
+    
+    steps:
+      - name: Send Slack notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_PAYLOAD: ${{ needs.prepare-notification-payload.outputs.slack-payload }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "⚠️ SLACK_WEBHOOK_URL secret not configured, skipping Slack notification"
+            exit 0
+          fi
+          
+          echo "📢 Sending Slack notification..."
+          
+          # Send notification to Slack
+          HTTP_STATUS=$(curl -s -o /tmp/slack_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$SLACK_PAYLOAD" \
+            "$SLACK_WEBHOOK_URL")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Slack notification sent successfully"
+          else
+            echo "❌ Failed to send Slack notification (HTTP $HTTP_STATUS)"
+            echo "Response:"
+            cat /tmp/slack_response.json || echo "No response body"
+            exit 1
+          fi
+
+  send-email-notification:
+    name: Send Email Notification
+    runs-on: ubuntu-latest
+    needs: [determine-notification-scope, prepare-notification-payload]
+    if: needs.determine-notification-scope.outputs.should-notify-email == 'true'
+    
+    steps:
+      - name: Send email notification
+        env:
+          EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
+          EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
+          EMAIL_PAYLOAD: ${{ needs.prepare-notification-payload.outputs.email-payload }}
+        run: |
+          if [ -z "$EMAIL_API_KEY" ]; then
+            echo "⚠️ NOTIFICATION_EMAIL_API_KEY secret not configured, skipping email notification"
+            exit 0
+          fi
+          
+          echo "📧 Sending email notification..."
+          
+          # Default email endpoint if not provided
+          if [ -z "$EMAIL_ENDPOINT" ]; then
+            EMAIL_ENDPOINT="https://api.emailservice.com/v1/send"
+          fi
+          
+          # Send notification via email API
+          HTTP_STATUS=$(curl -s -o /tmp/email_response.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $EMAIL_API_KEY" \
+            -d "$EMAIL_PAYLOAD" \
+            "$EMAIL_ENDPOINT")
+          
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
+            echo "✅ Email notification sent successfully"
+          else
+            echo "❌ Failed to send email notification (HTTP $HTTP_STATUS)"
+            echo "Response:"
+            cat /tmp/email_response.json || echo "No response body"
+            # Don't fail the workflow for email notification failures
+            echo "⚠️ Continuing despite email notification failure"
+          fi
+
+  notification-summary:
+    name: Notification Summary
+    runs-on: ubuntu-latest
+    needs: [determine-notification-scope, prepare-notification-payload, send-slack-notification, send-email-notification]
+    if: always()
+    
+    steps:
+      - name: Display notification summary
+        env:
+          NOTIFICATION_TITLE: ${{ needs.prepare-notification-payload.outputs.notification-title }}
+          SHOULD_NOTIFY_SLACK: ${{ needs.determine-notification-scope.outputs.should-notify-slack }}
+          SHOULD_NOTIFY_EMAIL: ${{ needs.determine-notification-scope.outputs.should-notify-email }}
+          SLACK_STATUS: ${{ needs.send-slack-notification.result }}
+          EMAIL_STATUS: ${{ needs.send-email-notification.result }}
+        run: |
+          echo "## 📢 Notification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Title:** $NOTIFICATION_TITLE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Slack notification status
+          if [ "$SHOULD_NOTIFY_SLACK" = "true" ]; then
+            case "$SLACK_STATUS" in
+              "success")
+                echo "**Slack:** ✅ Sent successfully" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "failure")
+                echo "**Slack:** ❌ Failed to send" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "skipped")
+                echo "**Slack:** ⏭️ Skipped (webhook not configured)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              *)
+                echo "**Slack:** ❓ Unknown status" >> $GITHUB_STEP_SUMMARY
+                ;;
+            esac
+          else
+            echo "**Slack:** ⏭️ Not required for this deployment" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Email notification status
+          if [ "$SHOULD_NOTIFY_EMAIL" = "true" ]; then
+            case "$EMAIL_STATUS" in
+              "success")
+                echo "**Email:** ✅ Sent successfully" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "failure")
+                echo "**Email:** ❌ Failed to send" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "skipped")
+                echo "**Email:** ⏭️ Skipped (API not configured)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              *)
+                echo "**Email:** ❓ Unknown status" >> $GITHUB_STEP_SUMMARY
+                ;;
+            esac
+          else
+            echo "**Email:** ⏭️ Not required for this deployment" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "To enable notifications, configure the following repository secrets:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`SLACK_WEBHOOK_URL\`: Slack webhook for team notifications" >> $GITHUB_STEP_SUMMARY
+          echo "- \`NOTIFICATION_EMAIL_API_KEY\`: Email service API key" >> $GITHUB_STEP_SUMMARY
+          echo "- \`NOTIFICATION_EMAIL_ENDPOINT\`: Email service endpoint (optional)" >> $GITHUB_STEP_SUMMARY

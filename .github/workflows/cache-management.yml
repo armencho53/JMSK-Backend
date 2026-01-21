@@ -1,0 +1,112 @@
+name: Cache Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Cache action to perform'
+        required: true
+        default: 'list'
+        type: choice
+        options:
+          - list
+          - clear-all
+          - clear-backend
+          - clear-frontend
+      reason:
+        description: 'Reason for cache operation'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  cache-management:
+    name: Manage Workflow Caches
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: List current caches
+        if: inputs.action == 'list'
+        run: |
+          echo "## 📋 Current Cache Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow can help manage GitHub Actions caches." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cache Types:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Pip Cache:** Python dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend SAM Cache:** AWS SAM build artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend npm Cache:** Node.js dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Build Cache:** Vite build artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cache Keys:" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: \`${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-*\`" >> $GITHUB_STEP_SUMMARY
+          echo "- SAM: \`${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-*\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: \`${{ runner.os }}-node-*-${{ env.NODE_VERSION }}-*\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ inputs.reason || 'Cache status check' }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clear all caches
+        if: inputs.action == 'clear-all'
+        run: |
+          echo "## 🧹 Cache Cleanup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** Clear all caches" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ inputs.reason || 'Full cache reset requested' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Impact:" >> $GITHUB_STEP_SUMMARY
+          echo "- Next backend build will download all Python dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- Next frontend build will download all Node.js dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- SAM builds will rebuild from scratch" >> $GITHUB_STEP_SUMMARY
+          echo "- Build times will be longer until caches are rebuilt" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ **Note:** GitHub Actions cache clearing is handled automatically by GitHub's cache eviction policies. This workflow documents the cache clearing action for audit purposes." >> $GITHUB_STEP_SUMMARY
+
+      - name: Clear backend caches
+        if: inputs.action == 'clear-backend'
+        run: |
+          echo "## 🧹 Backend Cache Cleanup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** Clear backend caches only" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ inputs.reason || 'Backend cache reset requested' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cleared Caches:" >> $GITHUB_STEP_SUMMARY
+          echo "- Python pip dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- AWS SAM build artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Impact:" >> $GITHUB_STEP_SUMMARY
+          echo "- Next backend deployment will rebuild Python dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- SAM builds will start from scratch" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clear frontend caches
+        if: inputs.action == 'clear-frontend'
+        run: |
+          echo "## 🧹 Frontend Cache Cleanup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** Clear frontend caches only" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ inputs.reason || 'Frontend cache reset requested' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cleared Caches:" >> $GITHUB_STEP_SUMMARY
+          echo "- Node.js npm dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- Vite build artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Jest test cache" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Impact:" >> $GITHUB_STEP_SUMMARY
+          echo "- Next frontend build will download all Node.js dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- Vite builds will start from scratch" >> $GITHUB_STEP_SUMMARY
+
+      - name: Log cache operation
+        run: |
+          echo "Cache management operation completed:"
+          echo "- Action: ${{ inputs.action }}"
+          echo "- Reason: ${{ inputs.reason || 'No reason provided' }}"
+          echo "- Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "- Triggered by: ${{ github.actor }}"

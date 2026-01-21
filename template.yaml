@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Jewelry Manufacturing System - Backend API
+
+Globals:
+  Function:
+    Timeout: 29
+    MemorySize: 1024
+    Runtime: python3.12
+    Environment:
+      Variables:
+        ENVIRONMENT: production
+        ALGORITHM: HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES: 30
+        PYTHONUNBUFFERED: 1
+    Tracing: Active
+
+Parameters:
+  DatabaseURL:
+    Type: String
+    Description: PostgreSQL database connection string
+    NoEcho: true
+  
+  SecretKey:
+    Type: String
+    Description: Secret key for JWT tokens
+    NoEcho: true
+  
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment stage
+  
+  AllowedOrigins:
+    Type: String
+    Default: '*'
+    Description: Allowed CORS origins (comma-separated or *)
+
+Resources:
+  JewelryApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: !Sub "'${AllowedOrigins}'"
+      Auth:
+        DefaultAuthorizer: NONE
+
+  JewelryApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: python3.12
+    Properties:
+      CodeUri: .
+      Handler: lambda_handler.handler
+      Description: FastAPI backend for Jewelry Manufacturing System
+      Environment:
+        Variables:
+          DATABASE_URL: !Ref DatabaseURL
+          SECRET_KEY: !Ref SecretKey
+          STAGE: !Ref Stage
+      Events:
+        ProxyApiRoot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JewelryApi
+            Path: /
+            Method: ANY
+        ProxyApiGreedy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JewelryApi
+            Path: /{proxy+}
+            Method: ANY
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${JewelryApiFunction}
+      RetentionInDays: 30
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${JewelryApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiUrl
+
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt JewelryApiFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-LambdaArn
