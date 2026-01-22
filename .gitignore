@@ -21,5 +21,19 @@ build/
 .aws-sam/
 samconfig.toml.bak
 
-# databse
+# Database files
 *.sql
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude/AI assistant files
+.claude/
+
+# Supabase local files
+supabase/.temp/

@@ -323,16 +323,19 @@ tests/
 - Layered directory structure
 - Base repository pattern
 - Domain exceptions
-- Customer module (full stack)
-- Import updates across codebase
-- Model migration to data layer
+- Customer module (full clean architecture stack)
+- Import consolidation (removed app/core, app/models duplicates)
+- Codebase cleanup (removed duplicates and unused code)
 
-### 🔄 Next Steps
-1. Refactor Auth module (authentication service)
-2. Refactor remaining CRUD modules
-3. Organize tests by layer
-4. Remove deprecated `app/api` and `app/core`
-5. Update Alembic migrations
+### 🔄 In Progress
+- Legacy endpoints in `app/api/v1/endpoints/` (auth, orders, supplies, etc.)
+- These are functional but need refactoring to clean architecture
+
+### 📋 Next Steps
+1. Refactor Auth module to clean architecture
+2. Refactor remaining CRUD modules (orders, supplies, companies, etc.)
+3. Organize tests by layer (unit/services, unit/repositories, integration/api)
+4. Remove deprecated `app/api/` directory once all endpoints migrated
 
 ## Benefits
 

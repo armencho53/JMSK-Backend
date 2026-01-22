@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 from app.presentation.api.v1.controllers import customer_controller
 
-# Import old endpoints temporarily for backward compatibility
+# Legacy endpoints (to be refactored to clean architecture)
 from app.api.v1.endpoints import (
     auth,
     tenants,
@@ -17,14 +17,14 @@ from app.api.v1.endpoints import (
 
 api_router = APIRouter()
 
-# New layered architecture endpoints
+# New clean architecture endpoints
 api_router.include_router(
     customer_controller.router,
     prefix="/customers",
     tags=["customers"]
 )
 
-# Legacy endpoints (to be refactored)
+# Legacy endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(roles.router, prefix="/roles", tags=["roles"])

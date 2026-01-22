@@ -33,10 +33,9 @@ cp .env.example .env
 alembic upgrade head
 ```
 
-5. Seed initial data:
+5. Seed initial data (optional):
 ```bash
-python seed_roles.py
-python seed_data.py
+python scripts/seed_database.py
 ```
 
 6. Start development server:

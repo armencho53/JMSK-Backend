@@ -8,8 +8,8 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.core.database import Base
-from app.models import *  # Import all models
+from app.data.database import Base
+from app.data.models import *  # Import all models
 
 config = context.config
 
