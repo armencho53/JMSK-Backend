@@ -6,12 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
 
 # Minimal FastAPI config for Lambda
+# Note: Mangum strips the stage prefix (api_gateway_base_path), so FastAPI sees paths without /stage
 app = FastAPI(
     title="Jewelry Manufacturing API",
     version="1.0.0",
-    docs_url="/docs" if not IS_LAMBDA else "/prod/docs",
+    docs_url="/docs",
     redoc_url=None,  # Disable ReDoc to reduce bundle size
-    openapi_url="/openapi.json" if not IS_LAMBDA else "/prod/openapi.json",
+    openapi_url="/openapi.json",
 )
 
 # Optimized CORS - minimal overhead
@@ -38,3 +39,16 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "lambda": IS_LAMBDA}
+
+@app.get("/health/db")
+def health_check_db():
+    """Check database connectivity"""
+    from app.data.database import SessionLocal
+    try:
+        db = SessionLocal()
+        # Simple query to test connection
+        db.execute("SELECT 1")
+        db.close()
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
