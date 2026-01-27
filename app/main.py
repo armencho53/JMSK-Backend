@@ -9,9 +9,9 @@ IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
 app = FastAPI(
     title="Jewelry Manufacturing API",
     version="1.0.0",
-    docs_url="/docs" if not IS_LAMBDA else "/prod/docs",
+    docs_url="/docs",
     redoc_url=None,  # Disable ReDoc to reduce bundle size
-    openapi_url="/openapi.json" if not IS_LAMBDA else "/prod/openapi.json",
+    openapi_url="/openapi.json",
 )
 
 # Optimized CORS - minimal overhead
