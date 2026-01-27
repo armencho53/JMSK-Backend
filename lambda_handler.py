@@ -12,5 +12,6 @@ from app.main import app
 from mangum import Mangum
 
 # Mangum adapter - lifespan off for faster cold starts
-# API Gateway strips the stage prefix before invoking Lambda
-handler = Mangum(app, lifespan="off")
+# api_gateway_base_path tells Mangum to strip the stage prefix
+stage = os.environ.get("STAGE", "prod")
+handler = Mangum(app, lifespan="off", api_gateway_base_path=f"/{stage}")
