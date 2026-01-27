@@ -72,12 +72,16 @@ Resources:
             RestApiId: !Ref JewelryApi
             Path: /
             Method: ANY
+            Auth:
+              Authorizer: NONE
         ProxyApiGreedy:
           Type: Api
           Properties:
             RestApiId: !Ref JewelryApi
             Path: /{proxy+}
             Method: ANY
+            Auth:
+              Authorizer: NONE
       Policies:
         - AWSLambdaVPCAccessExecutionRole
 
