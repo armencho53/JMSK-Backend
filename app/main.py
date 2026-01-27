@@ -4,9 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Lazy imports for faster cold starts
 IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
+STAGE = os.getenv("STAGE", "prod")
+
+# Configure root_path for API Gateway stage
+root_path = f"/{STAGE}" if IS_LAMBDA else ""
 
 # Minimal FastAPI config for Lambda
-# Note: Mangum strips the stage prefix (api_gateway_base_path), so FastAPI sees paths without /stage
 app = FastAPI(
     title="Jewelry Manufacturing API",
     version="1.0.0",
@@ -14,6 +17,7 @@ app = FastAPI(
     redoc_url=None,  # Disable ReDoc to reduce bundle size
     openapi_url="/openapi.json",
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
+    root_path=root_path,  # Tell FastAPI about the API Gateway stage prefix
 )
 
 # Optimized CORS - minimal overhead for local 
@@ -45,10 +49,11 @@ def health_check():
 def health_check_db():
     """Check database connectivity"""
     from app.data.database import SessionLocal
+    from sqlalchemy import text
     try:
         db = SessionLocal()
         # Simple query to test connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
