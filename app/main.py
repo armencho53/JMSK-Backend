@@ -13,6 +13,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url=None,  # Disable ReDoc to reduce bundle size
     openapi_url="/openapi.json",
+    swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
 )
 
 # Optimized CORS - minimal overhead for local 
