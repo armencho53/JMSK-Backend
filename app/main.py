@@ -15,7 +15,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Optimized CORS - minimal overhead
+# Optimized CORS - minimal overhead for local 
 allowed_origins = ["*"] if IS_LAMBDA else ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
 
 app.add_middleware(
