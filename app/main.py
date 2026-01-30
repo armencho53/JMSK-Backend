@@ -6,10 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
 STAGE = os.getenv("STAGE", "prod")
 
-# Configure root_path for API Gateway stage
-root_path = f"/{STAGE}" if IS_LAMBDA else ""
-
 # Minimal FastAPI config for Lambda
+# Note: root_path is NOT set because Mangum handles the stage prefix stripping
 app = FastAPI(
     title="Jewelry Manufacturing API",
     version="1.0.0",
@@ -17,7 +15,6 @@ app = FastAPI(
     redoc_url=None,  # Disable ReDoc to reduce bundle size
     openapi_url="/openapi.json",
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
-    root_path=root_path,  # Tell FastAPI about the API Gateway stage prefix
 )
 
 # Optimized CORS - minimal overhead for local 
