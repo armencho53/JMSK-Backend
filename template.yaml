@@ -46,9 +46,10 @@ Resources:
     Properties:
       StageName: !Ref Stage
       Cors:
-        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization'"
-        AllowOrigin: !Sub "'${AllowedOrigins}'"
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+        MaxAge: "'3600'"
       Auth:
         DefaultAuthorizer: NONE
 
