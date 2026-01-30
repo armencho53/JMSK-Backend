@@ -546,18 +546,13 @@ def get_manufacturing_stats(
         "failed": 0
     }
 
-    excessive_loss_count = 0
+    # Weight loss tracking removed - now tracked via department balances
     total_duration = 0
     completed_steps = 0
 
     for step in steps:
         # Count by status
         status_counts[step.status.value] = status_counts.get(step.status.value, 0) + 1
-
-        # Check for excessive loss
-        if step.weight_loss_percentage and step.expected_loss_percentage:
-            if step.weight_loss_percentage > step.expected_loss_percentage:
-                excessive_loss_count += 1
 
         # Calculate average duration for completed steps
         if step.status == StepStatus.COMPLETED and step.started_at and step.completed_at:
@@ -570,7 +565,6 @@ def get_manufacturing_stats(
     return {
         "total_steps": total_steps,
         "status_counts": status_counts,
-        "excessive_loss_count": excessive_loss_count,
         "average_duration_hours": round(avg_duration, 2),
         "completed_steps": completed_steps
     }

@@ -22,7 +22,7 @@ class ManufacturingStepCreate(ManufacturingStepBase):
     quantity_received: Optional[float] = None
     quantity_returned: Optional[float] = None
     weight_received: Optional[float] = None
-    expected_loss_percentage: Optional[float] = None
+    # Note: expected_loss_percentage removed - now tracked via department balances
 
 class ManufacturingStepUpdate(BaseModel):
     step_type: Optional[StepType] = None
@@ -55,7 +55,7 @@ class ManufacturingStepUpdate(BaseModel):
     # Enhanced weight tracking
     weight_received: Optional[float] = None
     weight_returned: Optional[float] = None
-    expected_loss_percentage: Optional[float] = None
+    # Note: expected_loss_percentage removed - now tracked via department balances
 
     notes: Optional[str] = None
 
@@ -100,9 +100,8 @@ class ManufacturingStepResponse(ManufacturingStepBase):
     # Enhanced weight tracking
     weight_received: Optional[float] = None
     weight_returned: Optional[float] = None
-    weight_loss: Optional[float] = None
-    weight_loss_percentage: Optional[float] = None
-    expected_loss_percentage: Optional[float] = None
+    # Note: weight_loss, weight_loss_percentage, and expected_loss_percentage
+    # were removed from the model - now tracked via department balances
 
     notes: Optional[str] = None
     created_at: datetime
