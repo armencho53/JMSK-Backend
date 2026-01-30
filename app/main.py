@@ -21,15 +21,13 @@ app = FastAPI(
 
 )
 
-# Optimized CORS - minimal overhead for local 
-allowed_origins = ["*"] if IS_LAMBDA else ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
-
+# CORS - Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when allow_origins is ["*"]
+    allow_methods=["*"],
+    allow_headers=["*"],
     max_age=3600,  # Cache preflight requests
 )
 
