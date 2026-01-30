@@ -1,6 +1,8 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Lazy imports for faster cold starts
 IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
@@ -18,17 +20,45 @@ app = FastAPI(
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
     root_path=root_path,
     lifespan="off",  # Disable lifespan for faster Lambda startup
-
 )
 
-# CORS - Allow all origins
+# Custom CORS middleware to ensure headers are always present
+class CORSHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Handle preflight OPTIONS requests
+        if request.method == "OPTIONS":
+            return JSONResponse(
+                content={},
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Max-Age": "3600",
+                }
+            )
+        
+        # Process the request
+        response = await call_next(request)
+        
+        # Add CORS headers to all responses
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Max-Age"] = "3600"
+        
+        return response
+
+# Add custom CORS middleware first
+app.add_middleware(CORSHeaderMiddleware)
+
+# Add standard CORS middleware as backup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,  # Must be False when allow_origins is ["*"]
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    max_age=3600,  # Cache preflight requests
+    max_age=3600,
 )
 
 # Load routes at module level (required for Lambda with lifespan="off")
