@@ -19,7 +19,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
     root_path=root_path,
-    lifespan="off",  # Disable lifespan for faster Lambda startup
+    lifespan=None,  # Disable lifespan for faster Lambda startup
 )
 
 # Custom CORS middleware to ensure headers are always present
