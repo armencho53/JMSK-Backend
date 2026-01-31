@@ -38,7 +38,7 @@ app = FastAPI(
         "clientSecret": "",  # No client secret required
         "scopes": "",
         "appName": "Jewelry Manufacturing API",
-      
+    } 
 
 # Custom CORS middleware to ensure headers are always present
 class CORSHeaderMiddleware(BaseHTTPMiddleware):
