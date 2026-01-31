@@ -14,31 +14,13 @@ root_path = f"/{STAGE}" if IS_LAMBDA else ""
 app = FastAPI(
     title="Jewelry Manufacturing API",
     version="1.0.0",
-    description="""
-    ## Authentication
-    
-    To authenticate in Swagger UI:
-    1. Click the "Authorize" button (🔓)
-    2. Enter your **username** (email) and **password**
-    3. Leave **client_id** and **client_secret** empty
-    4. Click "Authorize"
-    
-    The API uses JWT tokens for authentication. After successful login, 
-    the token will be automatically included in all requests.
-    """,
     docs_url="/docs",
     redoc_url=None,  # Disable ReDoc to reduce bundle size
     openapi_url="/openapi.json",
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
     root_path=root_path,
     lifespan=None,  # Disable lifespan for faster Lambda startup
-    swagger_ui_init_oauth={
-        "usePkceWithAuthorizationCodeGrant": False,
-        "clientId": "",  # No client ID required
-        "clientSecret": "",  # No client secret required
-        "scopes": "",
-        "appName": "Jewelry Manufacturing API",
-    } 
+)
 
 # Custom CORS middleware to ensure headers are always present
 class CORSHeaderMiddleware(BaseHTTPMiddleware):
