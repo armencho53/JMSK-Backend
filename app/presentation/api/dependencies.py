@@ -1,4 +1,5 @@
 """API dependencies for dependency injection"""
+import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -6,7 +7,12 @@ from app.data.database import get_db
 from app.infrastructure.security import decode_access_token
 from app.data.models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+# Determine token URL based on environment
+IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
+STAGE = os.getenv("STAGE", "prod")
+TOKEN_URL = f"/{STAGE}/api/v1/auth/login" if IS_LAMBDA else "/api/v1/auth/login"
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=TOKEN_URL, auto_error=False)
 
 
 def get_current_user(
