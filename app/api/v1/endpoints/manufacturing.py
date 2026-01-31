@@ -192,15 +192,7 @@ def update_step(
     elif step_update.status == StepStatus.COMPLETED and not step.completed_at:
         step.completed_at = datetime.utcnow()
 
-    # Auto-set goods given timestamp (legacy)
-    if (step_update.goods_given_quantity is not None or step_update.goods_given_weight is not None) and not step.goods_given_at:
-        step.goods_given_at = datetime.utcnow()
-
-    # Auto-set goods returned timestamp (legacy)
-    if (step_update.goods_returned_quantity is not None or step_update.goods_returned_weight is not None) and not step.goods_returned_at:
-        step.goods_returned_at = datetime.utcnow()
-
-    # Auto-set received timestamp for new weight tracking
+    # Auto-set received timestamp for weight tracking
     if step_update.weight_received is not None and not step.received_at:
         step.received_at = datetime.utcnow()
 
@@ -333,7 +325,7 @@ def transfer_step(
         order_id=parent_step.order_id,
         parent_step_id=parent_step.id,
         step_type=transfer_request.next_step_type,
-        step_name=transfer_request.next_step_name,
+        description=transfer_request.next_description,
         status=StepStatus.IN_PROGRESS,
         department=transfer_request.department,
         worker_name=transfer_request.received_by,
@@ -341,7 +333,7 @@ def transfer_step(
         weight_received=transfer_request.weight,
         received_at=datetime.utcnow(),
         received_by=transfer_request.received_by,
-        transferred_by=parent_step.worker_name or parent_step.assigned_to
+        transferred_by=parent_step.worker_name
     )
 
     db.add(child_step)
@@ -375,7 +367,7 @@ def transfer_step(
 
     # Update parent step: set transferred_by if this is the first transfer
     if not parent_step.transferred_by:
-        parent_step.transferred_by = parent_step.worker_name or parent_step.assigned_to
+        parent_step.transferred_by = parent_step.worker_name
 
     # Calculate new totals after this transfer
     new_total_transferred_qty = total_transferred_qty + transfer_request.quantity
@@ -504,7 +496,7 @@ def get_dashboard_by_worker(
     # Group steps by worker_name
     workers = {}
     for step in steps:
-        worker = step.worker_name or step.assigned_to or "Unassigned"
+        worker = step.worker_name or "Unassigned"
         if worker not in workers:
             workers[worker] = {
                 "worker_name": worker,
