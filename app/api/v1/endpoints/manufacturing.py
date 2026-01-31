@@ -117,24 +117,11 @@ def create_step(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # Validate that current_user has tenant_id
-    if not current_user.tenant_id:
-        raise HTTPException(status_code=400, detail="User does not have a tenant_id")
-    
     # Create the manufacturing step with explicit tenant_id
     step_data = step.dict()
     step_data['tenant_id'] = current_user.tenant_id
     
-    # Verify tenant_id is set before creating the object
-    if 'tenant_id' not in step_data or step_data['tenant_id'] is None:
-        raise HTTPException(status_code=500, detail="Failed to set tenant_id")
-    
     db_step = ManufacturingStep(**step_data)
-    
-    # Double-check tenant_id is set on the object
-    if not db_step.tenant_id:
-        raise HTTPException(status_code=500, detail="tenant_id not set on ManufacturingStep object")
-    
     db.add(db_step)
     db.flush()  # Flush to get the ID but don't commit yet
 
