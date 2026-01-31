@@ -7,19 +7,37 @@
 
 **Root Cause**: The way the step data was being passed to the ManufacturingStep constructor might have caused the tenant_id to be overridden or not properly set.
 
-**Solution**: Modified the `create_step` endpoint to explicitly set tenant_id in the step data dictionary before creating the model instance:
+**Solution**: Modified the `create_step` endpoint to:
+1. Explicitly set tenant_id in the step data dictionary before creating the model instance
+2. Add validation to ensure tenant_id is set correctly
+3. Raise clear errors if tenant_id is missing
 
 ```python
-# Before
-db_step = ManufacturingStep(**step.dict(), tenant_id=current_user.tenant_id)
-
-# After
-step_data = step.dict()
-step_data['tenant_id'] = current_user.tenant_id
-db_step = ManufacturingStep(**step_data)
+# After fix
+def create_step(step, db, current_user):
+    # Validate that current_user has tenant_id
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User does not have a tenant_id")
+    
+    # Create the manufacturing step with explicit tenant_id
+    step_data = step.dict()
+    step_data['tenant_id'] = current_user.tenant_id
+    
+    # Verify tenant_id is set before creating the object
+    if 'tenant_id' not in step_data or step_data['tenant_id'] is None:
+        raise HTTPException(status_code=500, detail="Failed to set tenant_id")
+    
+    db_step = ManufacturingStep(**step_data)
+    
+    # Double-check tenant_id is set on the object
+    if not db_step.tenant_id:
+        raise HTTPException(status_code=500, detail="tenant_id not set on ManufacturingStep object")
+    
+    db.add(db_step)
+    db.flush()
 ```
 
-This ensures tenant_id is always set correctly from the authenticated user.
+This ensures tenant_id is always set correctly from the authenticated user and provides clear error messages if something goes wrong.
 
 ### Issue 2: parent_step_id Should Be Null for New Steps
 **Problem**: When adding a new manufacturing step (not a transfer), the parent_step_id field was being included in the create schema, which could lead to confusion or incorrect data.
@@ -199,3 +217,58 @@ The child step (ID 2) will have:
 ## Migration Impact
 
 No database migration needed - these are API/schema-level fixes only.
+
+## Troubleshooting
+
+### If tenant_id is still NULL in database:
+
+1. **Check Authentication**: Ensure the user is properly authenticated and has a tenant_id
+   ```bash
+   # Test with a valid JWT token
+   curl -X GET "http://localhost:8000/api/v1/auth/me" \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+   
+   Response should include `tenant_id`:
+   ```json
+   {
+     "id": 1,
+     "tenant_id": 1,
+     "email": "user@example.com",
+     ...
+   }
+   ```
+
+2. **Run the test script**:
+   ```bash
+   python3 test_tenant_id_insertion.py
+   ```
+   
+   This will check:
+   - If the table structure is correct
+   - If existing records have tenant_id
+   - If there are any NULL tenant_id records
+
+3. **Check application logs**: Look for error messages like:
+   - "User does not have a tenant_id"
+   - "Failed to set tenant_id"
+   - "tenant_id not set on ManufacturingStep object"
+
+4. **Fix existing NULL records**:
+   ```sql
+   -- Update NULL tenant_id from related order
+   UPDATE manufacturing_steps
+   SET tenant_id = (
+     SELECT tenant_id FROM orders 
+     WHERE orders.id = manufacturing_steps.order_id
+   )
+   WHERE tenant_id IS NULL;
+   ```
+
+### Enum Value Mismatch
+
+The enum values in the model have been updated to use lowercase with underscores:
+- ✓ Use: `"casting"`, `"stone_setting"`, `"in_progress"`
+- ✗ Don't use: `"CASTING"`, `"STONE_SETTING"`, `"IN_PROGRESS"`
+
+If you get enum validation errors, make sure you're using the correct lowercase format.
