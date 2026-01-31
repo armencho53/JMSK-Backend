@@ -5,11 +5,11 @@ import enum
 from app.data.database import Base
 
 class ShipmentStatus(str, enum.Enum):
-    PREPARING = "preparing"
-    SHIPPED = "shipped"
-    IN_TRANSIT = "in_transit"
-    DELIVERED = "delivered"
-    RETURNED = "returned"
+    PREPARING = "PREPARING"
+    SHIPPED = "SHIPPED"
+    IN_TRANSIT = "IN_TRANSIT"
+    DELIVERED = "DELIVERED"
+    RETURNED = "RETURNED"
 
 class Shipment(Base):
     __tablename__ = "shipments"

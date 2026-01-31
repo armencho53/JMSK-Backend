@@ -5,19 +5,19 @@ import enum
 from app.data.database import Base
 
 class StepType(str, enum.Enum):
-    DESIGN = "design"
-    CASTING = "casting"
-    STONE_SETTING = "stone_setting"
-    POLISHING = "polishing"
-    ENGRAVING = "engraving"
-    QUALITY_CHECK = "quality_check"
-    FINISHING = "finishing"
-    OTHER = "other"
+    DESIGN = "DESIGN"
+    CASTING = "CASTING"
+    STONE_SETTING = "STONE_SETTING"
+    POLISHING = "POLISHING"
+    ENGRAVING = "ENGRAVING"
+    QUALITY_CHECK = "QUALITY_CHECK"
+    FINISHING = "FINISHING"
+    OTHER = "OTHER"
 
 class StepStatus(str, enum.Enum):
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 class ManufacturingStep(Base):
     __tablename__ = "manufacturing_steps"
