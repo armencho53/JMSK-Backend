@@ -117,31 +117,51 @@ def create_step(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    # Debug: Log current user info
+    print(f"DEBUG: Creating step for user_id={current_user.id}, tenant_id={current_user.tenant_id}")
+    
     # Create the manufacturing step with explicit tenant_id
     step_data = step.dict()
     step_data['tenant_id'] = current_user.tenant_id
     
+    # Debug: Verify tenant_id is in the data
+    print(f"DEBUG: step_data tenant_id = {step_data.get('tenant_id')}")
+    
     db_step = ManufacturingStep(**step_data)
+    
+    # Debug: Verify tenant_id is on the object
+    print(f"DEBUG: db_step.tenant_id = {db_step.tenant_id}")
+    
     db.add(db_step)
     db.flush()  # Flush to get the ID but don't commit yet
+    
+    # Debug: Verify after flush
+    print(f"DEBUG: After flush, db_step.id={db_step.id}, tenant_id={db_step.tenant_id}")
 
-    # Handle department balance tracking
+    # Handle department balance tracking (optional - only if Inventory department exists)
     if db_step.weight_received and db_step.weight_received > 0 and db_step.department:
         # Get the order to determine metal type
         order = db.query(Order).filter(Order.id == db_step.order_id).first()
         if order and order.metal_type:
-            # For first step (no parent), allocate from Inventory
+            # For first step (no parent), try to allocate from Inventory
             if not db_step.parent_step_id:
-                # Subtract from Inventory department
-                update_department_balance(
-                    db=db,
-                    tenant_id=current_user.tenant_id,
-                    department_name="Inventory",
-                    metal_type=order.metal_type,
-                    amount_grams=db_step.weight_received,
-                    operation="subtract"
-                )
-                # Add to the step's department
+                # Check if Inventory department exists
+                inventory_dept = db.query(Department).filter(
+                    Department.tenant_id == current_user.tenant_id,
+                    Department.name == "Inventory"
+                ).first()
+                
+                if inventory_dept:
+                    # Subtract from Inventory department
+                    update_department_balance(
+                        db=db,
+                        tenant_id=current_user.tenant_id,
+                        department_name="Inventory",
+                        metal_type=order.metal_type,
+                        amount_grams=db_step.weight_received,
+                        operation="subtract"
+                    )
+                # Add to the step's department (always do this)
                 update_department_balance(
                     db=db,
                     tenant_id=current_user.tenant_id,
