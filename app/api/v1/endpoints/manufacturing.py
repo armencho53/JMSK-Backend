@@ -444,7 +444,7 @@ def get_dashboard_by_step(
         }
 
     for step in steps:
-        if step.step_type.value in grouped_steps:
+        if step.step_type and step.step_type.value in grouped_steps:
             grouped_steps[step.step_type.value]["steps"].append(step)
 
     return {"groups": list(grouped_steps.values())}
