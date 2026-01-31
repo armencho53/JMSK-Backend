@@ -51,9 +51,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    remember_me: bool = Form(False),
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
     # Get IP address and user agent for logging
@@ -61,7 +59,7 @@ def login(
     user_agent = request.headers.get("user-agent")
 
     # Normalize email to lowercase for consistent lookup
-    normalized_email = normalize_email(username)
+    normalized_email = normalize_email(form_data.username)
 
     # Query user by email (globally unique)
     user = db.query(User).filter(User.email == normalized_email).first()
@@ -124,7 +122,7 @@ def login(
         )
 
     # Verify credentials
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         # Log failed attempt - invalid credentials (only if user exists)
         if user:
             login_history = LoginHistory(
@@ -197,9 +195,9 @@ def login(
     # Delete any existing refresh tokens for this user (one token per user policy)
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete()
 
-    # Create refresh token
+    # Create refresh token (default to remember_me=False for OAuth2 flow)
     refresh_token_value = create_refresh_token()
-    refresh_token_expires = get_refresh_token_expires(remember_me)
+    refresh_token_expires = get_refresh_token_expires(remember_me=False)
 
     refresh_token = RefreshToken(
         user_id=user.id,
