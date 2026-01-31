@@ -9,7 +9,6 @@ class ManufacturingStepBase(BaseModel):
     step_name: str
     description: Optional[str] = None
     assigned_to: Optional[str] = None
-    sequence_order: Optional[int] = None
     department: Optional[str] = None
     worker_name: Optional[str] = None
     parent_step_id: Optional[int] = None
@@ -30,7 +29,6 @@ class ManufacturingStepUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[StepStatus] = None
     assigned_to: Optional[str] = None
-    sequence_order: Optional[int] = None
     department: Optional[str] = None
     worker_name: Optional[str] = None
     parent_step_id: Optional[int] = None
