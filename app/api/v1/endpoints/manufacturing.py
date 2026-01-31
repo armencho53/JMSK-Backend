@@ -117,8 +117,11 @@ def create_step(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # Create the manufacturing step
-    db_step = ManufacturingStep(**step.dict(), tenant_id=current_user.tenant_id)
+    # Create the manufacturing step with explicit tenant_id
+    step_data = step.dict()
+    step_data['tenant_id'] = current_user.tenant_id
+    
+    db_step = ManufacturingStep(**step_data)
     db.add(db_step)
     db.flush()  # Flush to get the ID but don't commit yet
 

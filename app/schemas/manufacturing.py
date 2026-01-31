@@ -9,7 +9,6 @@ class ManufacturingStepBase(BaseModel):
     description: Optional[str] = None
     department: Optional[str] = None
     worker_name: Optional[str] = None
-    parent_step_id: Optional[int] = None
 
 class ManufacturingStepCreate(ManufacturingStepBase):
     quantity_received: Optional[float] = None
@@ -52,6 +51,7 @@ class ManufacturingStepResponse(ManufacturingStepBase):
     id: int
     tenant_id: int
     status: StepStatus
+    parent_step_id: Optional[int] = None
 
     # Timestamps
     started_at: Optional[datetime] = None
