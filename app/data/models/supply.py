@@ -5,11 +5,11 @@ import enum
 from app.data.database import Base
 
 class SupplyType(str, enum.Enum):
-    METAL = "metal"
-    GEMSTONE = "gemstone"
-    TOOL = "tool"
-    PACKAGING = "packaging"
-    OTHER = "other"
+    METAL = "METAL"
+    GEMSTONE = "GEMSTONE"
+    TOOL = "TOOL"
+    PACKAGING = "PACKAGING"
+    OTHER = "OTHER"
 
 class Supply(Base):
     __tablename__ = "supplies"

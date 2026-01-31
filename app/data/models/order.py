@@ -5,20 +5,20 @@ import enum
 from app.data.database import Base
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    SHIPPED = "shipped"
-    CANCELLED = "cancelled"
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    SHIPPED = "SHIPPED"
+    CANCELLED = "CANCELLED"
 
 class MetalType(str, enum.Enum):
-    GOLD_24K = "gold_24k"
-    GOLD_22K = "gold_22k"
-    GOLD_18K = "gold_18k"
-    GOLD_14K = "gold_14k"
-    SILVER_925 = "silver_925"
-    PLATINUM = "platinum"
-    OTHER = "other"
+    GOLD_24K = "GOLD_24K"
+    GOLD_22K = "GOLD_22K"
+    GOLD_18K = "GOLD_18K"
+    GOLD_14K = "GOLD_14K"
+    SILVER_925 = "SILVER_925"
+    PLATINUM = "PLATINUM"
+    OTHER = "OTHER"
 
 class Order(Base):
     __tablename__ = "orders"
