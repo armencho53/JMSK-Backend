@@ -19,6 +19,8 @@ class Tenant(Base):
     supplies = relationship("Supply", back_populates="tenant")
     companies = relationship("Company", back_populates="tenant")
     customers = relationship("Customer", back_populates="tenant")
+    contacts = relationship("Contact", back_populates="tenant")
+    addresses = relationship("Address", back_populates="tenant")
     orders = relationship("Order", back_populates="tenant")
     manufacturing_steps = relationship("ManufacturingStep", back_populates="tenant")
     shipments = relationship("Shipment", back_populates="tenant")

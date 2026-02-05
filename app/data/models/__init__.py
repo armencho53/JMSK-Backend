@@ -7,6 +7,8 @@ from app.data.models.login_history import LoginHistory
 from app.data.models.supply import Supply
 from app.data.models.company import Company
 from app.data.models.customer import Customer
+from app.data.models.contact import Contact
+from app.data.models.address import Address
 from app.data.models.order import Order, OrderStatus, MetalType
 from app.data.models.manufacturing_step import ManufacturingStep
 from app.data.models.shipment import Shipment
@@ -23,6 +25,8 @@ __all__ = [
     "Supply",
     "Company",
     "Customer",
+    "Contact",
+    "Address",
     "Order",
     "OrderStatus",
     "MetalType",

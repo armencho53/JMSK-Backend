@@ -35,6 +35,12 @@ def db_session():
 
 
 @pytest.fixture(scope="function")
+def db(db_session):
+    """Alias for db_session to match common naming convention."""
+    return db_session
+
+
+@pytest.fixture(scope="function")
 def client(db_session):
     """Create a test client with database dependency override."""
     def override_get_db():
@@ -68,3 +74,33 @@ def sample_user_data():
         "full_name": "Test User",
         "is_active": True
     }
+
+
+@pytest.fixture
+def sample_tenant(db_session):
+    """Create a sample tenant for testing."""
+    from app.data.models.tenant import Tenant
+    tenant = Tenant(
+        name="Test Tenant",
+        subdomain="test-tenant",
+        is_active=True
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant
+
+
+@pytest.fixture
+def other_tenant(db_session):
+    """Create another tenant for multi-tenant isolation testing."""
+    from app.data.models.tenant import Tenant
+    tenant = Tenant(
+        name="Other Tenant",
+        subdomain="other-tenant",
+        is_active=True
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant

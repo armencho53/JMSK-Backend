@@ -23,4 +23,5 @@ class Customer(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="customers")
     company = relationship("Company", back_populates="customers")
-    orders = relationship("Order", back_populates="customer")
+    # Note: orders relationship removed as Customer model is legacy
+    # Orders now reference Contact model via contact_id field

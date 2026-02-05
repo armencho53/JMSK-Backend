@@ -1,9 +1,46 @@
+"""Company model for hierarchical contact system"""
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.data.database import Base
 
+
 class Company(Base):
+    """
+    Company model representing an organization in the hierarchical contact system.
+    
+    Companies are the parent entities in the company-contact hierarchy. Each company
+    can have multiple contacts (individuals who work for the company) and multiple
+    orders (placed by those contacts). The company serves as the primary business
+    entity for aggregating balances and tracking overall business relationships.
+    
+    Attributes:
+        id: Primary key
+        tenant_id: Foreign key to tenant for multi-tenant isolation
+        name: Company name (required, unique per tenant)
+        address: Company address (optional, text field for flexibility)
+        phone: Company phone number (optional)
+        email: Company email address (optional)
+        created_at: Timestamp when company was created
+        updated_at: Timestamp when company was last updated
+    
+    Relationships:
+        tenant: The tenant this company belongs to
+        customers: Legacy relationship to Customer model (being phased out)
+        contacts: All contacts (individuals) associated with this company
+        orders: All orders placed by contacts of this company
+    
+    Constraints:
+        - Unique constraint on (tenant_id, name) to prevent duplicate company names
+        - Foreign key constraints ensure referential integrity
+    
+    Balance Calculation:
+        Company balance is calculated by aggregating all order values from all
+        associated contacts. This is handled by the CompanyRepository.get_balance()
+        method rather than being stored as a field.
+    
+    Requirements: 1.3, 2.1, 2.2, 4.1, 4.3
+    """
     __tablename__ = "companies"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -23,3 +60,6 @@ class Company(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="companies")
     customers = relationship("Customer", back_populates="company")
+    contacts = relationship("Contact", back_populates="company", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="company", foreign_keys="Order.company_id")
+    addresses = relationship("Address", back_populates="company", foreign_keys="[Address.company_id]", cascade="all, delete-orphan")
