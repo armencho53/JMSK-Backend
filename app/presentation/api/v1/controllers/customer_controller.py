@@ -1,4 +1,16 @@
-"""Customer API controller"""
+"""
+DEPRECATED: Legacy customer API controller.
+
+This controller is being replaced by ContactController as part of the
+hierarchical contact system migration. Use app.presentation.api.v1.controllers.contact_controller
+for all new code.
+
+These endpoints are maintained for backward compatibility but will be removed
+in a future version. Please migrate to the new /api/v1/contacts endpoints.
+
+Migration path: /api/v1/customers -> /api/v1/contacts
+See: app/presentation/api/v1/controllers/contact_controller.py
+"""
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -16,7 +28,7 @@ from app.schemas.customer import (
 from app.domain.services.customer_service import CustomerService
 from app.domain.exceptions import DomainException
 
-router = APIRouter()
+router = APIRouter(deprecated=True)  # Mark all routes as deprecated
 
 
 def handle_domain_exception(e: DomainException):

@@ -3,7 +3,19 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.data.database import Base
 
+# DEPRECATED: This model is being phased out in favor of Contact model
+# Use app.data.models.contact.Contact for new code
+# This model is kept for backward compatibility during migration
 class Customer(Base):
+    """
+    DEPRECATED: Legacy customer model.
+    
+    This model is being replaced by the Contact model as part of the
+    hierarchical contact system migration. Use Contact model for all new code.
+    
+    Migration path: customers table -> contacts table
+    See: alembic/versions/003_hierarchical_contact_system.py
+    """
     __tablename__ = "customers"
     
     id = Column(Integer, primary_key=True, index=True)

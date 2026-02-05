@@ -1,4 +1,13 @@
-"""Customer business logic service"""
+"""
+DEPRECATED: Legacy customer business logic service.
+
+This service is being replaced by ContactService as part of the
+hierarchical contact system migration. Use app.domain.services.contact_service
+for all new code.
+
+Migration path: CustomerService -> ContactService
+See: app/domain/services/contact_service.py
+"""
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.data.repositories.customer_repository import CustomerRepository
@@ -8,7 +17,10 @@ from app.domain.exceptions import ResourceNotFoundError, DuplicateResourceError,
 
 
 class CustomerService:
-    """Service for customer business logic"""
+    """
+    DEPRECATED: Service for customer business logic.
+    Use ContactService instead.
+    """
     
     def __init__(self, db: Session):
         self.db = db

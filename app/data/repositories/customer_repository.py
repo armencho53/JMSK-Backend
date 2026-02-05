@@ -1,4 +1,13 @@
-"""Customer repository for data access"""
+"""
+DEPRECATED: Legacy customer repository for data access.
+
+This repository is being replaced by ContactRepository as part of the
+hierarchical contact system migration. Use app.data.repositories.contact_repository
+for all new code.
+
+Migration path: CustomerRepository -> ContactRepository
+See: app/data/repositories/contact_repository.py
+"""
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -8,7 +17,10 @@ from app.data.models.order import Order
 
 
 class CustomerRepository(BaseRepository[Customer]):
-    """Repository for customer data access"""
+    """
+    DEPRECATED: Repository for customer data access.
+    Use ContactRepository instead.
+    """
     
     def __init__(self, db: Session):
         super().__init__(Customer, db)
