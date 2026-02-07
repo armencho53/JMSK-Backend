@@ -17,9 +17,7 @@ from app.schemas.company import (
     CompanyUpdate,
     CompanyResponse,
     ContactSummary,
-    AddressSummary,
-    CustomerSummary,
-    CompanyDetailResponse
+    AddressSummary
 )
 
 
@@ -343,89 +341,6 @@ class TestCompanyResponse:
         assert len(company.contacts) == 1
         assert len(company.addresses) == 1
         assert company.total_balance == Decimal("25000.00")
-
-
-class TestCustomerSummary:
-    """Test CustomerSummary schema (legacy)."""
-    
-    def test_customer_summary_complete(self):
-        """Test CustomerSummary with all fields."""
-        customer = CustomerSummary(
-            id=1,
-            name="Legacy Customer",
-            email="legacy@customer.com",
-            phone="555-9999"
-        )
-        assert customer.id == 1
-        assert customer.name == "Legacy Customer"
-        assert customer.email == "legacy@customer.com"
-        assert customer.phone == "555-9999"
-    
-    def test_customer_summary_without_phone(self):
-        """Test CustomerSummary without phone."""
-        customer = CustomerSummary(
-            id=2,
-            name="No Phone Customer",
-            email="nophone@customer.com",
-            phone=None
-        )
-        assert customer.phone is None
-
-
-class TestCompanyDetailResponse:
-    """Test CompanyDetailResponse schema."""
-    
-    def test_company_detail_response_inherits_from_company_response(self):
-        """Test that CompanyDetailResponse includes all CompanyResponse fields."""
-        now = datetime.utcnow()
-        company = CompanyDetailResponse(
-            id=1,
-            tenant_id=1,
-            name="Detail Company",
-            created_at=now,
-            updated_at=now,
-            customers=[]
-        )
-        assert company.id == 1
-        assert company.name == "Detail Company"
-        assert company.customers == []
-    
-    def test_company_detail_response_with_customers(self):
-        """Test CompanyDetailResponse with legacy customers list."""
-        now = datetime.utcnow()
-        customers = [
-            CustomerSummary(id=1, name="Customer 1", email="c1@test.com", phone="555-0001"),
-            CustomerSummary(id=2, name="Customer 2", email="c2@test.com", phone="555-0002")
-        ]
-        company = CompanyDetailResponse(
-            id=1,
-            tenant_id=1,
-            name="Company with Customers",
-            created_at=now,
-            updated_at=now,
-            customers=customers
-        )
-        assert len(company.customers) == 2
-        assert company.customers[0].name == "Customer 1"
-    
-    def test_company_detail_response_with_contacts_and_customers(self):
-        """Test CompanyDetailResponse with both contacts and legacy customers."""
-        now = datetime.utcnow()
-        contacts = [ContactSummary(id=1, name="Contact 1")]
-        customers = [CustomerSummary(id=1, name="Customer 1", email="c1@test.com", phone="555-0001")]
-        company = CompanyDetailResponse(
-            id=1,
-            tenant_id=1,
-            name="Hybrid Company",
-            created_at=now,
-            updated_at=now,
-            contacts=contacts,
-            customers=customers,
-            total_balance=Decimal("10000.00")
-        )
-        assert len(company.contacts) == 1
-        assert len(company.customers) == 1
-        assert company.total_balance == Decimal("10000.00")
 
 
 class TestCompanySchemaIntegration:
