@@ -164,7 +164,12 @@ def get_order_timeline(
     """
     Get timeline of manufacturing steps for an order
     """
-    order = db.query(Order).filter(
+    from sqlalchemy.orm import joinedload
+    
+    # Eagerly load contact relationship to avoid lazy loading issues
+    order = db.query(Order).options(
+        joinedload(Order.contact)
+    ).filter(
         Order.id == order_id,
         Order.tenant_id == current_user.tenant_id
     ).first()
