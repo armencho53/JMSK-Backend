@@ -194,27 +194,27 @@ def get_order_timeline(
         timeline_steps.append({
             "id": step.id,
             "step_name": step.step_name,
-            "step_type": step.step_type.value,
-            "status": step.status.value,
+            "step_type": step.step_type.value if hasattr(step.step_type, 'value') else str(step.step_type),
+            "status": step.status.value if hasattr(step.status, 'value') else str(step.status),
             "department": step.department,
             "worker_name": step.worker_name or step.assigned_to,
-            "started_at": step.started_at,
-            "completed_at": step.completed_at,
-            "received_at": step.received_at,
+            "started_at": step.started_at.isoformat() if step.started_at else None,
+            "completed_at": step.completed_at.isoformat() if step.completed_at else None,
+            "received_at": step.received_at.isoformat() if step.received_at else None,
             "duration_hours": duration_hours,
             "sequence_order": step.sequence_order,
             "weight_loss_percentage": step.weight_loss_percentage,
             "expected_loss_percentage": step.expected_loss_percentage
         })
 
-    # Get contact name from relationship
+    # Get contact name from relationship (handle None case)
     contact_name = order.contact.name if order.contact else "Unknown Contact"
     
     return {
         "order_id": order.id,
         "order_number": order.order_number,
         "contact_name": contact_name,
-        "product_description": order.product_description,
+        "product_description": order.product_description or "",
         "steps": timeline_steps,
         "total_steps": len(timeline_steps)
     }
