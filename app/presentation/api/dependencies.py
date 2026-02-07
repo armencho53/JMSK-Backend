@@ -26,6 +26,10 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    # Check if token is provided
+    if token is None:
+        raise credentials_exception
+    
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
