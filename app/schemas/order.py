@@ -4,15 +4,10 @@ from datetime import datetime
 from app.data.models.order import OrderStatus, MetalType
 
 # Import summary schemas for nested relationships
-# Note: ContactSummary is in company.py, CompanySummary is in contact.py
-# to avoid circular imports
 from app.schemas.company import ContactSummary
 from app.schemas.contact import CompanySummary
 
 class OrderBase(BaseModel):
-    customer_name: str
-    customer_email: Optional[str] = None
-    customer_phone: Optional[str] = None
     product_description: str
     specifications: Optional[str] = None
     quantity: int = 1
@@ -23,15 +18,10 @@ class OrderBase(BaseModel):
     initial_total_weight: Optional[float] = None
 
 class OrderCreate(OrderBase):
-    contact_id: Optional[int] = None  # New field for hierarchical contact system
-    customer_id: Optional[int] = None  # Deprecated: maintained for backward compatibility
+    contact_id: int  # Required for hierarchical contact system
 
 class OrderUpdate(BaseModel):
-    contact_id: Optional[int] = None  # New field for hierarchical contact system
-    customer_id: Optional[int] = None  # Deprecated: maintained for backward compatibility
-    customer_name: Optional[str] = None
-    customer_email: Optional[str] = None
-    customer_phone: Optional[str] = None
+    contact_id: Optional[int] = None
     product_description: Optional[str] = None
     specifications: Optional[str] = None
     quantity: Optional[int] = None
@@ -46,9 +36,8 @@ class OrderResponse(OrderBase):
     id: int
     order_number: str
     tenant_id: int
-    contact_id: Optional[int] = None  # New field for hierarchical contact system
-    company_id: Optional[int] = None  # New field for hierarchical contact system
-    customer_id: Optional[int] = None  # Deprecated: maintained for backward compatibility
+    contact_id: int
+    company_id: int
     status: OrderStatus
     created_at: datetime
     updated_at: datetime

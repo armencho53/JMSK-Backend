@@ -37,9 +37,6 @@ class Order(Base):
         order_number: Unique order identifier
         contact_id: Foreign key to contact who placed the order (required)
         company_id: Foreign key to company the order belongs to (required)
-        customer_name: Customer name for display purposes
-        customer_email: Customer email for communication
-        customer_phone: Customer phone for communication
         product_description: Description of the jewelry product
         specifications: Detailed product specifications
         quantity: Number of pieces to manufacture
@@ -73,9 +70,6 @@ class Order(Base):
     order_number = Column(String, unique=True, nullable=False, index=True)
     contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=False, index=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    customer_name = Column(String, nullable=False)
-    customer_email = Column(String)
-    customer_phone = Column(String)
     product_description = Column(Text)
     specifications = Column(Text)
     quantity = Column(Integer, default=1)
