@@ -6,7 +6,6 @@ from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
 from app.data.models.order import Order
-from app.data.models.customer import Customer
 from app.data.models.contact import Contact
 from app.data.models.manufacturing_step import ManufacturingStep
 from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse
@@ -44,40 +43,24 @@ def create_order(
     order_number = generate_order_number(current_user.tenant_id, db)
     order_data = order.dict()
     
-    # Determine which ID to use: contact_id (new) or customer_id (legacy)
-    contact_id = order_data.get('contact_id') or order_data.get('customer_id')
+    # Validate contact_id and auto-populate company_id
+    contact_id = order_data.get('contact_id')
     
     if contact_id:
-        # Try to fetch as contact first (new hierarchical system)
         contact = db.query(Contact).filter(
             Contact.id == contact_id,
             Contact.tenant_id == current_user.tenant_id
         ).first()
         
-        if contact:
-            # Auto-populate company_id from contact's company (Requirement 3.1)
-            order_data['contact_id'] = contact.id
-            order_data['company_id'] = contact.company_id
-            order_data['customer_name'] = contact.name
-            order_data['customer_email'] = contact.email
-            order_data['customer_phone'] = contact.phone
-        else:
-            # Fallback: try legacy customer table for backward compatibility
-            customer = db.query(Customer).filter(
-                Customer.id == contact_id,
-                Customer.tenant_id == current_user.tenant_id
-            ).first()
-            
-            if customer:
-                order_data['customer_name'] = customer.name
-                order_data['customer_email'] = customer.email
-                order_data['customer_phone'] = customer.phone
-                # Note: customer_id is maintained for backward compatibility
-            else:
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Contact or Customer with id {contact_id} not found"
-                )
+        if not contact:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Contact with id {contact_id} not found"
+            )
+        
+        # Auto-populate company_id from contact's company (Requirement 3.1)
+        order_data['contact_id'] = contact.id
+        order_data['company_id'] = contact.company_id
     
     db_order = Order(
         **order_data,
@@ -128,46 +111,24 @@ def update_order(
     
     update_data = order_update.dict(exclude_unset=True)
     
-    # Handle contact_id or customer_id update
-    contact_id = update_data.get('contact_id') or update_data.get('customer_id')
+    # Handle contact_id update
+    contact_id = update_data.get('contact_id')
     
     if contact_id:
-        # Try to fetch as contact first (new hierarchical system)
         contact = db.query(Contact).filter(
             Contact.id == contact_id,
             Contact.tenant_id == current_user.tenant_id
         ).first()
         
-        if contact:
-            # Auto-populate company_id from contact's company (Requirement 3.1)
-            update_data['contact_id'] = contact.id
-            update_data['company_id'] = contact.company_id
-            # Optionally update contact details if not explicitly provided
-            if 'customer_name' not in update_data:
-                update_data['customer_name'] = contact.name
-            if 'customer_email' not in update_data:
-                update_data['customer_email'] = contact.email
-            if 'customer_phone' not in update_data:
-                update_data['customer_phone'] = contact.phone
-        else:
-            # Fallback: try legacy customer table for backward compatibility
-            customer = db.query(Customer).filter(
-                Customer.id == contact_id,
-                Customer.tenant_id == current_user.tenant_id
-            ).first()
-            
-            if customer:
-                if 'customer_name' not in update_data:
-                    update_data['customer_name'] = customer.name
-                if 'customer_email' not in update_data:
-                    update_data['customer_email'] = customer.email
-                if 'customer_phone' not in update_data:
-                    update_data['customer_phone'] = customer.phone
-            else:
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Contact or Customer with id {contact_id} not found"
-                )
+        if not contact:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Contact with id {contact_id} not found"
+            )
+        
+        # Auto-populate company_id from contact's company (Requirement 3.1)
+        update_data['contact_id'] = contact.id
+        update_data['company_id'] = contact.company_id
     
     for key, value in update_data.items():
         setattr(order, key, value)
@@ -241,10 +202,13 @@ def get_order_timeline(
             "expected_loss_percentage": step.expected_loss_percentage
         })
 
+    # Get contact name from relationship
+    contact_name = order.contact.name if order.contact else "Unknown Contact"
+    
     return {
         "order_id": order.id,
         "order_number": order.order_number,
-        "customer_name": order.customer_name,
+        "contact_name": contact_name,
         "product_description": order.product_description,
         "steps": timeline_steps,
         "total_steps": len(timeline_steps)

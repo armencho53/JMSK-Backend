@@ -1,7 +1,6 @@
 """API v1 router - aggregates all controllers"""
 from fastapi import APIRouter
 from app.presentation.api.v1.controllers import (
-    customer_controller,
     contact_controller,
     company_controller,
     address_controller
@@ -23,12 +22,6 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 # New clean architecture endpoints
-api_router.include_router(
-    customer_controller.router,
-    prefix="/customers",
-    tags=["customers"]
-)
-
 api_router.include_router(
     contact_controller.router,
     prefix="/contacts",

@@ -26,9 +26,9 @@ class Company(Base):
     
     Relationships:
         tenant: The tenant this company belongs to
-        customers: Legacy relationship to Customer model (being phased out)
         contacts: All contacts (individuals) associated with this company
         orders: All orders placed by contacts of this company
+        addresses: All addresses associated with this company
     
     Constraints:
         - Unique constraint on (tenant_id, name) to prevent duplicate company names
@@ -59,7 +59,6 @@ class Company(Base):
     
     # Relationships
     tenant = relationship("Tenant", back_populates="companies")
-    customers = relationship("Customer", back_populates="company")
     contacts = relationship("Contact", back_populates="company", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="company", foreign_keys="Order.company_id")
     addresses = relationship("Address", back_populates="company", foreign_keys="[Address.company_id]", cascade="all, delete-orphan")

@@ -5,8 +5,8 @@ from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
 from app.data.models.company import Company
-from app.data.models.customer import Customer
-from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse, CompanyDetailResponse, CustomerSummary
+from app.data.models.contact import Contact
+from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 
 router = APIRouter()
 
@@ -50,7 +50,7 @@ def create_company(
     
     return db_company
 
-@router.get("/{company_id}", response_model=CompanyDetailResponse)
+@router.get("/{company_id}", response_model=CompanyResponse)
 def get_company(
     company_id: int,
     db: Session = Depends(get_db),
@@ -64,30 +64,7 @@ def get_company(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     
-    # Get customers for this company
-    customers = db.query(Customer).filter(Customer.company_id == company_id).all()
-    
-    customer_summaries = [
-        CustomerSummary(
-            id=customer.id,
-            name=customer.name,
-            email=customer.email,
-            phone=customer.phone
-        )
-        for customer in customers
-    ]
-    
-    return CompanyDetailResponse(
-        id=company.id,
-        tenant_id=company.tenant_id,
-        name=company.name,
-        address=company.address,
-        phone=company.phone,
-        email=company.email,
-        created_at=company.created_at,
-        updated_at=company.updated_at,
-        customers=customer_summaries
-    )
+    return company
 
 @router.put("/{company_id}", response_model=CompanyResponse)
 def update_company(
@@ -139,12 +116,12 @@ def delete_company(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     
-    # Check if company has customers
-    customer_count = db.query(Customer).filter(Customer.company_id == company_id).count()
-    if customer_count > 0:
+    # Check if company has contacts
+    contact_count = db.query(Contact).filter(Contact.company_id == company_id).count()
+    if contact_count > 0:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete company with associated customers"
+            detail="Cannot delete company with associated contacts"
         )
     
     db.delete(company)
