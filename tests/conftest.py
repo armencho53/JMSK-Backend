@@ -76,31 +76,4 @@ def sample_user_data():
     }
 
 
-@pytest.fixture
-def sample_tenant(db_session):
-    """Create a sample tenant for testing."""
-    from app.data.models.tenant import Tenant
-    tenant = Tenant(
-        name="Test Tenant",
-        subdomain="test-tenant",
-        is_active=True
-    )
-    db_session.add(tenant)
-    db_session.commit()
-    db_session.refresh(tenant)
-    return tenant
-
-
-@pytest.fixture
-def other_tenant(db_session):
-    """Create another tenant for multi-tenant isolation testing."""
-    from app.data.models.tenant import Tenant
-    tenant = Tenant(
-        name="Other Tenant",
-        subdomain="other-tenant",
-        is_active=True
-    )
-    db_session.add(tenant)
-    db_session.commit()
-    db_session.refresh(tenant)
-    return tenant
+# Removed fixtures that create data - database is already seeded
