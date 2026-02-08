@@ -43,7 +43,6 @@ class TransferStepRequest(BaseModel):
     quantity: float
     weight: float
     next_step_type: StepType
-    next_description: str
     received_by: str
     department: Optional[str] = None
 

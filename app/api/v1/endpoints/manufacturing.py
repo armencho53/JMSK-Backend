@@ -348,7 +348,6 @@ def transfer_step(
         order_id=parent_step.order_id,
         parent_step_id=parent_step.id,
         step_type=transfer_request.next_step_type,
-        description=transfer_request.next_description,
         status=StepStatus.IN_PROGRESS,
         department=transfer_request.department,
         worker_name=transfer_request.received_by,
