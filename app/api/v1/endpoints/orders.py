@@ -199,7 +199,6 @@ def get_order_timeline(
 
         timeline_steps.append({
             "id": step.id,
-            "step_name": step.step_type.value if step.step_type else "Unknown Step",
             "step_type": step.step_type.value if step.step_type else "OTHER",
             "status": step.status.value.lower() if step.status else "in_progress",
             "department": step.department or "",
