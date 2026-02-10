@@ -3,10 +3,11 @@ from typing import Optional
 from datetime import datetime
 from app.data.models.order import OrderStatus, MetalType
 
+# Import summary schemas for nested relationships
+from app.schemas.company import ContactSummary
+from app.schemas.contact import CompanySummary
+
 class OrderBase(BaseModel):
-    customer_name: str
-    customer_email: Optional[str] = None
-    customer_phone: Optional[str] = None
     product_description: str
     specifications: Optional[str] = None
     quantity: int = 1
@@ -17,13 +18,10 @@ class OrderBase(BaseModel):
     initial_total_weight: Optional[float] = None
 
 class OrderCreate(OrderBase):
-    customer_id: Optional[int] = None
+    contact_id: int  # Required for hierarchical contact system
 
 class OrderUpdate(BaseModel):
-    customer_id: Optional[int] = None
-    customer_name: Optional[str] = None
-    customer_email: Optional[str] = None
-    customer_phone: Optional[str] = None
+    contact_id: Optional[int] = None
     product_description: Optional[str] = None
     specifications: Optional[str] = None
     quantity: Optional[int] = None
@@ -38,10 +36,15 @@ class OrderResponse(OrderBase):
     id: int
     order_number: str
     tenant_id: int
-    customer_id: Optional[int] = None
+    contact_id: int
+    company_id: int
     status: OrderStatus
     created_at: datetime
     updated_at: datetime
+    
+    # Nested relationship data (Requirements 3.1, 7.3)
+    contact: Optional[ContactSummary] = None
+    company: Optional[CompanySummary] = None
     
     class Config:
         from_attributes = True

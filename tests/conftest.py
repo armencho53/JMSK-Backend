@@ -35,6 +35,12 @@ def db_session():
 
 
 @pytest.fixture(scope="function")
+def db(db_session):
+    """Alias for db_session to match common naming convention."""
+    return db_session
+
+
+@pytest.fixture(scope="function")
 def client(db_session):
     """Create a test client with database dependency override."""
     def override_get_db():
@@ -68,3 +74,6 @@ def sample_user_data():
         "full_name": "Test User",
         "is_active": True
     }
+
+
+# Removed fixtures that create data - database is already seeded

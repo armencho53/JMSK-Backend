@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
+import os
 from app.data.database import get_db
 from app.infrastructure.security import (
     verify_password,
@@ -20,7 +21,13 @@ from app.schemas.auth import Token, UserCreate, UserResponse
 from app.presentation.api.dependencies import get_current_active_user
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+# Determine token URL based on environment
+IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
+STAGE = os.getenv("STAGE", "prod")
+TOKEN_URL = f"/{STAGE}/api/v1/auth/login" if IS_LAMBDA else "/api/v1/auth/login"
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=TOKEN_URL)
 
 @router.post("/register", response_model=UserResponse)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):

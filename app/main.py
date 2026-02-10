@@ -61,7 +61,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Load routes at module level (required for Lambda with lifespan="off")
 # Using new layered architecture router
 from app.presentation.api.v1.router import api_router
 app.include_router(api_router, prefix="/api/v1")

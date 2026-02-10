@@ -1,6 +1,10 @@
 """API v1 router - aggregates all controllers"""
 from fastapi import APIRouter
-from app.presentation.api.v1.controllers import customer_controller
+from app.presentation.api.v1.controllers import (
+    contact_controller,
+    company_controller,
+    address_controller
+)
 
 # Legacy endpoints (to be refactored to clean architecture)
 from app.api.v1.endpoints import (
@@ -19,9 +23,21 @@ api_router = APIRouter()
 
 # New clean architecture endpoints
 api_router.include_router(
-    customer_controller.router,
-    prefix="/customers",
-    tags=["customers"]
+    contact_controller.router,
+    prefix="/contacts",
+    tags=["contacts"]
+)
+
+api_router.include_router(
+    company_controller.router,
+    prefix="/companies-v2",  # Use different prefix to avoid conflict with legacy
+    tags=["companies-v2"]
+)
+
+api_router.include_router(
+    address_controller.router,
+    prefix="",  # No prefix since routes include /companies/{id}/addresses
+    tags=["addresses"]
 )
 
 # Legacy endpoints
