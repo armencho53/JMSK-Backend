@@ -1,6 +1,5 @@
 import os
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -23,43 +22,29 @@ app = FastAPI(
 )
 
 # Custom CORS middleware to ensure headers are always present
+# This is critical for Lambda/API Gateway where standard CORSMiddleware
+# may not cover all edge cases (e.g., unhandled exceptions, streaming responses)
 class CORSHeaderMiddleware(BaseHTTPMiddleware):
+    CORS_HEADERS = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+        "Access-Control-Max-Age": "3600",
+    }
+
     async def dispatch(self, request: Request, call_next):
-        # Handle preflight OPTIONS requests
+        # Handle preflight OPTIONS requests directly
         if request.method == "OPTIONS":
-            return JSONResponse(
-                content={},
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "*",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Max-Age": "3600",
-                }
-            )
+            return JSONResponse(content={}, headers=self.CORS_HEADERS)
         
-        # Process the request
+        # Process the request and add CORS headers
         response = await call_next(request)
-        
-        # Add CORS headers to all responses
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers["Access-Control-Max-Age"] = "3600"
-        
+        for key, value in self.CORS_HEADERS.items():
+            response.headers[key] = value
         return response
 
-# Add custom CORS middleware first
+# Single CORS middleware — handles both preflight and actual requests
 app.add_middleware(CORSHeaderMiddleware)
-
-# Add standard CORS middleware as backup
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    max_age=3600,
-)
 
 # Using new layered architecture router
 from app.presentation.api.v1.router import api_router
