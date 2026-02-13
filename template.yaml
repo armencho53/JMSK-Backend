@@ -45,11 +45,9 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Stage
-      Cors:
-        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-        AllowOrigin: "'*'"
-        MaxAge: "'3600'"
+      # CORS is handled entirely by FastAPI middleware in Lambda.
+      # Do NOT add a Cors property here — SAM creates mock OPTIONS integrations
+      # that conflict with the ANY /{proxy+} Lambda proxy and cause 404s.
       Auth:
         DefaultAuthorizer: NONE
       GatewayResponses:
