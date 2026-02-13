@@ -6,11 +6,14 @@ from datetime import datetime
 from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
-from app.data.models.manufacturing_step import ManufacturingStep, StepStatus, StepType
+from app.data.models.manufacturing_step import ManufacturingStep
+from app.domain.enums import StepStatus
 from app.data.models.department import Department
 from app.data.models.department_balance import DepartmentBalance
-from app.data.models.order import Order, MetalType
+from app.data.models.order import Order
 from app.schemas.manufacturing import ManufacturingStepCreate, ManufacturingStepUpdate, ManufacturingStepResponse, TransferStepRequest
+from app.domain.services.lookup_service import LookupService
+from app.domain.exceptions import ValidationError
 
 router = APIRouter()
 
@@ -20,7 +23,7 @@ def get_or_create_department_balance(
     db: Session,
     tenant_id: int,
     department_name: str,
-    metal_type: MetalType
+    metal_type: str
 ) -> DepartmentBalance:
     """Get or create a department balance for a specific metal type."""
     # Get department by name
@@ -54,7 +57,7 @@ def update_department_balance(
     db: Session,
     tenant_id: int,
     department_name: str,
-    metal_type: MetalType,
+    metal_type: str,
     amount_grams: float,
     operation: str = "add"
 ) -> DepartmentBalance:
@@ -123,6 +126,15 @@ def create_step(
     # Create the manufacturing step with explicit tenant_id
     step_data = step.dict()
     step_data['tenant_id'] = current_user.tenant_id
+
+    # Validate step_type against lookup values if provided (Requirement 6.2)
+    step_type = step_data.get('step_type')
+    if step_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "step_type", step_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
     
     # Debug: Verify tenant_id is in the data
     print(f"DEBUG: step_data tenant_id = {step_data.get('tenant_id')}")
@@ -206,7 +218,18 @@ def update_step(
     if not step:
         raise HTTPException(status_code=404, detail="Manufacturing step not found")
 
-    for key, value in step_update.dict(exclude_unset=True).items():
+    update_data = step_update.dict(exclude_unset=True)
+
+    # Validate step_type against lookup values if provided (Requirement 6.2)
+    step_type = update_data.get('step_type')
+    if step_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "step_type", step_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
+
+    for key, value in update_data.items():
         setattr(step, key, value)
 
     # Auto-set timestamps based on status
@@ -306,6 +329,14 @@ def transfer_step(
 
     if not parent_step:
         raise HTTPException(status_code=404, detail="Manufacturing step not found")
+
+    # Validate next_step_type against lookup values (Requirement 6.2)
+    if transfer_request.next_step_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "step_type", transfer_request.next_step_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
 
     # Calculate already transferred amounts from existing children
     children = db.query(ManufacturingStep).filter(
@@ -450,16 +481,16 @@ def get_dashboard_by_step(
 
     # Group steps by step_type
     grouped_steps = {}
-    for step_type in StepType:
-        grouped_steps[step_type.value] = {
-            "step_type": step_type.value,
-            "label": step_type.value.replace('_', ' ').title(),
-            "steps": []
-        }
-
     for step in steps:
-        if step.step_type and step.step_type.value in grouped_steps:
-            grouped_steps[step.step_type.value]["steps"].append(step)
+        step_type_value = step.step_type
+        if step_type_value:
+            if step_type_value not in grouped_steps:
+                grouped_steps[step_type_value] = {
+                    "step_type": step_type_value,
+                    "label": step_type_value.replace('_', ' ').title(),
+                    "steps": []
+                }
+            grouped_steps[step_type_value]["steps"].append(step)
 
     return {"groups": list(grouped_steps.values())}
 

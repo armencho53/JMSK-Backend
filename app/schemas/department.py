@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from app.data.models.order import MetalType
 
 class DepartmentBase(BaseModel):
     name: str
@@ -25,7 +24,7 @@ class DepartmentResponse(DepartmentBase):
 
 class DepartmentBalanceResponse(BaseModel):
     id: int
-    metal_type: MetalType
+    metal_type: str
     balance_grams: float
 
     class Config:

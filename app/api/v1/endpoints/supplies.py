@@ -6,6 +6,8 @@ from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
 from app.data.models.supply import Supply
 from app.schemas.supply import SupplyCreate, SupplyUpdate, SupplyResponse
+from app.domain.services.lookup_service import LookupService
+from app.domain.exceptions import ValidationError
 
 router = APIRouter()
 
@@ -27,6 +29,13 @@ def create_supply(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    # Validate type against lookup values (Requirement 6.3)
+    lookup_service = LookupService(db)
+    try:
+        lookup_service.validate_lookup_code(current_user.tenant_id, "supply_type", supply.type)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
     db_supply = Supply(**supply.dict(), tenant_id=current_user.tenant_id)
     db.add(db_supply)
     db.commit()
@@ -64,7 +73,18 @@ def update_supply(
     if not supply:
         raise HTTPException(status_code=404, detail="Supply not found")
     
-    for key, value in supply_update.dict(exclude_unset=True).items():
+    update_data = supply_update.dict(exclude_unset=True)
+
+    # Validate type against lookup values if provided (Requirement 6.3)
+    supply_type = update_data.get('type')
+    if supply_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "supply_type", supply_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
+
+    for key, value in update_data.items():
         setattr(supply, key, value)
     
     db.commit()

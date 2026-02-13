@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.data.models.order import OrderStatus, MetalType
+from app.domain.enums import OrderStatus
 
 # Import summary schemas for nested relationships
 from app.schemas.company import ContactSummary
@@ -13,7 +13,7 @@ class OrderBase(BaseModel):
     quantity: int = 1
     price: Optional[float] = None
     due_date: Optional[datetime] = None
-    metal_type: Optional[MetalType] = None
+    metal_type: Optional[str] = None
     target_weight_per_piece: Optional[float] = None
     initial_total_weight: Optional[float] = None
 
@@ -28,7 +28,7 @@ class OrderUpdate(BaseModel):
     price: Optional[float] = None
     status: Optional[OrderStatus] = None
     due_date: Optional[datetime] = None
-    metal_type: Optional[MetalType] = None
+    metal_type: Optional[str] = None
     target_weight_per_piece: Optional[float] = None
     initial_total_weight: Optional[float] = None
 

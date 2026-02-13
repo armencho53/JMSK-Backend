@@ -1,11 +1,10 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.data.models.supply import SupplyType
 
 class SupplyBase(BaseModel):
     name: str
-    type: SupplyType
+    type: str
     quantity: float
     unit: str
     cost_per_unit: Optional[float] = None
@@ -17,7 +16,7 @@ class SupplyCreate(SupplyBase):
 
 class SupplyUpdate(BaseModel):
     name: Optional[str] = None
-    type: Optional[SupplyType] = None
+    type: Optional[str] = None
     quantity: Optional[float] = None
     unit: Optional[str] = None
     cost_per_unit: Optional[float] = None

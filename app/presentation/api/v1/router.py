@@ -3,7 +3,8 @@ from fastapi import APIRouter
 from app.presentation.api.v1.controllers import (
     contact_controller,
     company_controller,
-    address_controller
+    address_controller,
+    lookup_controller,
 )
 
 # Legacy endpoints (to be refactored to clean architecture)
@@ -38,6 +39,12 @@ api_router.include_router(
     address_controller.router,
     prefix="",  # No prefix since routes include /companies/{id}/addresses
     tags=["addresses"]
+)
+
+api_router.include_router(
+    lookup_controller.router,
+    prefix="/lookup-values",
+    tags=["lookup-values"]
 )
 
 # Legacy endpoints

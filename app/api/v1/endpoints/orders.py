@@ -9,6 +9,8 @@ from app.data.models.order import Order
 from app.data.models.contact import Contact
 from app.data.models.manufacturing_step import ManufacturingStep
 from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse
+from app.domain.services.lookup_service import LookupService
+from app.domain.exceptions import ValidationError
 
 router = APIRouter()
 
@@ -42,26 +44,35 @@ def create_order(
 ):
     order_number = generate_order_number(current_user.tenant_id, db)
     order_data = order.dict()
-    
+
+    # Validate metal_type against lookup values if provided (Requirement 6.1)
+    metal_type = order_data.get('metal_type')
+    if metal_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "metal_type", metal_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
+
     # Validate contact_id and auto-populate company_id
     contact_id = order_data.get('contact_id')
-    
+
     if contact_id:
         contact = db.query(Contact).filter(
             Contact.id == contact_id,
             Contact.tenant_id == current_user.tenant_id
         ).first()
-        
+
         if not contact:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail=f"Contact with id {contact_id} not found"
             )
-        
+
         # Auto-populate company_id from contact's company (Requirement 3.1)
         order_data['contact_id'] = contact.id
         order_data['company_id'] = contact.company_id
-    
+
     db_order = Order(
         **order_data,
         order_number=order_number,
@@ -105,34 +116,43 @@ def update_order(
         Order.id == order_id,
         Order.tenant_id == current_user.tenant_id
     ).first()
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     update_data = order_update.dict(exclude_unset=True)
-    
+
+    # Validate metal_type against lookup values if provided (Requirement 6.1)
+    metal_type = update_data.get('metal_type')
+    if metal_type:
+        lookup_service = LookupService(db)
+        try:
+            lookup_service.validate_lookup_code(current_user.tenant_id, "metal_type", metal_type)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.message)
+
     # Handle contact_id update
     contact_id = update_data.get('contact_id')
-    
+
     if contact_id:
         contact = db.query(Contact).filter(
             Contact.id == contact_id,
             Contact.tenant_id == current_user.tenant_id
         ).first()
-        
+
         if not contact:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail=f"Contact with id {contact_id} not found"
             )
-        
+
         # Auto-populate company_id from contact's company (Requirement 3.1)
         update_data['contact_id'] = contact.id
         update_data['company_id'] = contact.company_id
-    
+
     for key, value in update_data.items():
         setattr(order, key, value)
-    
+
     db.commit()
     db.refresh(order)
     return order
@@ -199,7 +219,7 @@ def get_order_timeline(
 
         timeline_steps.append({
             "id": step.id,
-            "step_type": step.step_type.value if step.step_type else "OTHER",
+            "step_type": step.step_type if step.step_type else "OTHER",
             "status": step.status.value.lower() if step.status else "in_progress",
             "department": step.department or "",
             "worker_name": step.worker_name or step.received_by or "",

@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from app.data.models.manufacturing_step import StepType, StepStatus
+from app.domain.enums import StepStatus
 
 class ManufacturingStepBase(BaseModel):
     order_id: int
-    step_type: Optional[StepType] = None
+    step_type: Optional[str] = None
     description: Optional[str] = None
     department: Optional[str] = None
     worker_name: Optional[str] = None
@@ -18,7 +18,7 @@ class ManufacturingStepCreate(ManufacturingStepBase):
     # Note: expected_loss_percentage removed - now tracked via department balances
 
 class ManufacturingStepUpdate(BaseModel):
-    step_type: Optional[StepType] = None
+    step_type: Optional[str] = None
     description: Optional[str] = None
     status: Optional[StepStatus] = None
     department: Optional[str] = None
@@ -44,7 +44,7 @@ class TransferStepRequest(BaseModel):
     """Request schema for transferring a portion of a manufacturing step to create a child step"""
     quantity: float
     weight: float
-    next_step_type: StepType
+    next_step_type: str
     received_by: str
     department: Optional[str] = None
 

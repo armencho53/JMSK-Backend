@@ -1,24 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Enum, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
-import enum
 from app.data.database import Base
-
-class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    SHIPPED = "SHIPPED"
-    CANCELLED = "CANCELLED"
-
-class MetalType(str, enum.Enum):
-    GOLD_24K = "GOLD_24K"
-    GOLD_22K = "GOLD_22K"
-    GOLD_18K = "GOLD_18K"
-    GOLD_14K = "GOLD_14K"
-    SILVER_925 = "SILVER_925"
-    PLATINUM = "PLATINUM"
-    OTHER = "OTHER"
+from app.domain.enums import OrderStatus
 
 class Order(Base):
     """
@@ -78,7 +62,7 @@ class Order(Base):
     due_date = Column(DateTime)
 
     # Metal and weight tracking
-    metal_type = Column(Enum(MetalType))
+    metal_type = Column(String(50))
     target_weight_per_piece = Column(Float)  # Expected final weight per piece in grams
     initial_total_weight = Column(Float)  # Total raw material weight in grams
 

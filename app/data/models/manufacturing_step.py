@@ -1,23 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Float
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime
-import enum
 from app.data.database import Base
-
-class StepType(str, enum.Enum):
-    DESIGN = "DESIGN"
-    CASTING = "CASTING"
-    STONE_SETTING = "STONE_SETTING"
-    POLISHING = "POLISHING"
-    ENGRAVING = "ENGRAVING"
-    QUALITY_CHECK = "QUALITY_CHECK"
-    FINISHING = "FINISHING"
-    OTHER = "OTHER"
-
-class StepStatus(str, enum.Enum):
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
+from app.domain.enums import StepStatus
 
 class ManufacturingStep(Base):
     __tablename__ = "manufacturing_steps"
@@ -26,7 +11,7 @@ class ManufacturingStep(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
     parent_step_id = Column(Integer, ForeignKey("manufacturing_steps.id"), nullable=True, index=True)
-    step_type = Column(Enum(StepType), nullable=True)
+    step_type = Column(String(50), nullable=True)
     description = Column(Text)
     status = Column(Enum(StepStatus, name='stepstatus',  values_callable=lambda x: [e.value for e in x]), default=StepStatus.IN_PROGRESS)
 

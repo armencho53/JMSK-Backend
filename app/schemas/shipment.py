@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.data.models.shipment import ShipmentStatus
+from app.domain.enums import ShipmentStatus
 
 class ShipmentBase(BaseModel):
     order_id: int

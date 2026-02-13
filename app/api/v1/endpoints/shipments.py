@@ -5,7 +5,8 @@ from datetime import datetime
 from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
-from app.data.models.shipment import Shipment, ShipmentStatus
+from app.data.models.shipment import Shipment
+from app.domain.enums import ShipmentStatus
 from app.schemas.shipment import ShipmentCreate, ShipmentUpdate, ShipmentResponse
 
 router = APIRouter()

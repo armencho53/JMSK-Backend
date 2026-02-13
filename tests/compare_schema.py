@@ -96,11 +96,9 @@ def main():
     print("Model Enum Values (Expected)")
     print("=" * 80)
     
-    from app.data.models.manufacturing_step import StepType, StepStatus
+    from app.domain.enums import StepStatus
     
-    print("\nsteptype:")
-    for e in StepType:
-        print(f"  - {e.value}")
+    print("\nsteptype: (now a String column, no longer an enum)")
     
     print("\nstepstatus:")
     for e in StepStatus:

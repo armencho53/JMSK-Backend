@@ -1,15 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Enum, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
-import enum
 from app.data.database import Base
-
-class ShipmentStatus(str, enum.Enum):
-    PREPARING = "PREPARING"
-    SHIPPED = "SHIPPED"
-    IN_TRANSIT = "IN_TRANSIT"
-    DELIVERED = "DELIVERED"
-    RETURNED = "RETURNED"
+from app.domain.enums import ShipmentStatus
 
 class Shipment(Base):
     __tablename__ = "shipments"

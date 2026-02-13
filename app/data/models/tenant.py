@@ -25,3 +25,4 @@ class Tenant(Base):
     shipments = relationship("Shipment", back_populates="tenant")
     departments = relationship("Department", back_populates="tenant")
     department_balances = relationship("DepartmentBalance", back_populates="tenant")
+    lookup_values = relationship("LookupValue", back_populates="tenant")
