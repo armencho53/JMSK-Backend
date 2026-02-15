@@ -397,15 +397,20 @@ def transfer_step(
         # Get the order to determine metal type
         order = db.query(Order).filter(Order.id == parent_step.order_id).first()
         if order and order.metal_type:
-            # Subtract from parent department
-            update_department_balance(
-                db=db,
-                tenant_id=current_user.tenant_id,
-                department_name=parent_step.department,
-                metal_type=order.metal_type,
-                amount_grams=transfer_request.weight,
-                operation="subtract"
+            # Subtract from parent department — use safe subtraction since
+            # step-level validation already confirmed sufficient remaining weight.
+            # Department balance may be out of sync for steps created before
+            # balance tracking was added.
+            parent_balance = get_or_create_department_balance(
+                db, current_user.tenant_id, parent_step.department, order.metal_type
             )
+            if parent_balance.balance_grams >= transfer_request.weight:
+                parent_balance.balance_grams -= transfer_request.weight
+            else:
+                # Balance is out of sync — zero it out rather than blocking the transfer
+                parent_balance.balance_grams = 0.0
+            parent_balance.updated_at = datetime.utcnow()
+
             # Add to receiving department (child step)
             update_department_balance(
                 db=db,
