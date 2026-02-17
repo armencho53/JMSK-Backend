@@ -17,9 +17,14 @@ depends_on = None
 def upgrade():
     # Remove customer fields from orders table
     # These are now replaced by contact_id and company_id relationships
-    op.drop_column('orders', 'customer_name')
-    op.drop_column('orders', 'customer_email')
-    op.drop_column('orders', 'customer_phone')
+    # Use IF EXISTS to handle cases where columns were already removed
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_columns = [c['name'] for c in inspector.get_columns('orders')]
+    
+    for col in ['customer_name', 'customer_email', 'customer_phone']:
+        if col in existing_columns:
+            op.drop_column('orders', col)
 
 def downgrade():
     # Add back customer fields if needed to rollback

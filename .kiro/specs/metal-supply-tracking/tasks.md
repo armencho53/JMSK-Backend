@@ -72,27 +72,27 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
 
 ### Phase 2: Safe Supply & Purchase API
 
-- [ ] 5. Create Safe Supply data model and migration
-  - [ ] 5.1 Create `app/data/models/safe_supply.py` with SafeSupply model (id, tenant_id, metal_id nullable, supply_type, quantity_grams, timestamps, unique constraint on tenant_id+metal_id+supply_type)
+- [x] 5. Create Safe Supply data model and migration
+  - [x] 5.1 Create `app/data/models/safe_supply.py` with SafeSupply model (id, tenant_id, metal_id nullable, supply_type, quantity_grams, timestamps, unique constraint on tenant_id+metal_id+supply_type)
     - Register model in `app/data/models/__init__.py`
     - _Requirements: 2.1, 2.2_
-  - [ ] 5.2 Create `app/data/models/metal_transaction.py` with MetalTransaction model (id, tenant_id, transaction_type, metal_id nullable, company_id nullable, order_id nullable, quantity_grams, notes, created_at, created_by)
+  - [x] 5.2 Create `app/data/models/metal_transaction.py` with MetalTransaction model (id, tenant_id, transaction_type, metal_id nullable, company_id nullable, order_id nullable, quantity_grams, notes, created_at, created_by)
     - Register model in `app/data/models/__init__.py`
     - _Requirements: 4.1_
-  - [ ] 5.3 Create Alembic migration for `safe_supplies` and `metal_transactions` tables
+  - [x] 5.3 Create Alembic migration for `safe_supplies` and `metal_transactions` tables
     - _Requirements: 13.2, 13.4_
 
-- [ ] 6. Create Safe Supply repository, schemas, and service
-  - [ ] 6.1 Create `app/data/repositories/safe_supply_repository.py` extending BaseRepository
+- [x] 6. Create Safe Supply repository, schemas, and service
+  - [x] 6.1 Create `app/data/repositories/safe_supply_repository.py` extending BaseRepository
     - Methods: get_or_create(tenant_id, metal_id, supply_type), get_all_for_tenant(tenant_id)
     - _Requirements: 2.1_
-  - [ ] 6.2 Create `app/data/repositories/metal_transaction_repository.py` extending BaseRepository
+  - [x] 6.2 Create `app/data/repositories/metal_transaction_repository.py` extending BaseRepository
     - Methods: get_filtered(tenant_id, filters)
     - _Requirements: 4.1_
-  - [ ] 6.3 Create Pydantic schemas in `app/schemas/supply_tracking.py` (SafePurchaseCreate, SafeSupplyResponse, MetalTransactionResponse)
+  - [x] 6.3 Create Pydantic schemas in `app/schemas/supply_tracking.py` (SafePurchaseCreate, SafeSupplyResponse, MetalTransactionResponse)
     - SafePurchaseCreate: metal_id (optional), supply_type ("FINE_METAL"/"ALLOY"), quantity_grams (>0), cost_per_gram (>=0)
     - _Requirements: 8.1, 8.4_
-  - [ ] 6.4 Create `app/domain/services/supply_tracking_service.py` with SupplyTrackingService
+  - [x] 6.4 Create `app/domain/services/supply_tracking_service.py` with SupplyTrackingService
     - Implement record_safe_purchase(): increase safe supply, update weighted average cost on Metal, create SAFE_PURCHASE transaction
     - Implement get_safe_supplies()
     - Implement get_transactions()
@@ -107,35 +107,35 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
     - **Property 10: Non-positive quantity rejection**
     - **Validates: Requirements 7.3, 8.4**
 
-- [ ] 7. Create Safe Supply controller and wire routes
-  - [ ] 7.1 Create supply tracking controller routes for safe purchases
+- [x] 7. Create Safe Supply controller and wire routes
+  - [x] 7.1 Create supply tracking controller routes for safe purchases
     - POST /api/v1/safe/purchases, GET /api/v1/safe/supplies, GET /api/v1/metal-transactions
     - _Requirements: 8.1, 8.4_
-  - [ ] 7.2 Register supply tracking controller in router.py
+  - [x] 7.2 Register supply tracking controller in router.py
     - _Requirements: 8.1_
 
-- [ ] 8. Phase 2 Checkpoint
+- [x] 8. Phase 2 Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
   - At this point: Safe supply tracking works, purchases can be recorded, transaction ledger is active.
 
 ### Phase 3: Company Metal Balance & Deposit API
 
-- [ ] 9. Create Company Metal Balance model and migration
-  - [ ] 9.1 Create `app/data/models/company_metal_balance.py` with CompanyMetalBalance model (id, tenant_id, company_id, metal_id, balance_grams, timestamps, unique constraint on tenant_id+company_id+metal_id)
+- [x] 9. Create Company Metal Balance model and migration
+  - [x] 9.1 Create `app/data/models/company_metal_balance.py` with CompanyMetalBalance model (id, tenant_id, company_id, metal_id, balance_grams, timestamps, unique constraint on tenant_id+company_id+metal_id)
     - Register model in `app/data/models/__init__.py`
     - Add relationship to Company model
     - _Requirements: 3.1, 3.2_
-  - [ ] 9.2 Create Alembic migration for `company_metal_balances` table
+  - [x] 9.2 Create Alembic migration for `company_metal_balances` table
     - _Requirements: 13.3_
 
-- [ ] 10. Create Company Metal Balance repository, schemas, and deposit logic
-  - [ ] 10.1 Create `app/data/repositories/company_metal_balance_repository.py` extending BaseRepository
+- [x] 10. Create Company Metal Balance repository, schemas, and deposit logic
+  - [x] 10.1 Create `app/data/repositories/company_metal_balance_repository.py` extending BaseRepository
     - Methods: get_or_create(tenant_id, company_id, metal_id), get_by_company(tenant_id, company_id)
     - _Requirements: 3.1_
-  - [ ] 10.2 Add deposit schemas to `app/schemas/supply_tracking.py` (MetalDepositCreate, CompanyMetalBalanceResponse)
+  - [x] 10.2 Add deposit schemas to `app/schemas/supply_tracking.py` (MetalDepositCreate, CompanyMetalBalanceResponse)
     - MetalDepositCreate: metal_id, quantity_grams (>0)
     - _Requirements: 7.1, 7.3_
-  - [ ] 10.3 Add record_company_deposit() and get_company_balances() to SupplyTrackingService
+  - [x] 10.3 Add record_company_deposit() and get_company_balances() to SupplyTrackingService
     - Deposit increases both Company_Metal_Balance and Safe_Supply (FINE_METAL)
     - Creates COMPANY_DEPOSIT transaction
     - Validates company_id and metal_id exist
@@ -147,15 +147,15 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
     - **Property 8: Transaction ledger completeness and sign convention**
     - **Validates: Requirements 4.2, 4.3, 4.4, 4.5**
 
-- [ ] 11. Create deposit and balance API endpoints
-  - [ ] 11.1 Add company deposit and balance routes to supply tracking controller
+- [x] 11. Create deposit and balance API endpoints
+  - [x] 11.1 Add company deposit and balance routes to supply tracking controller
     - POST /api/v1/companies/{company_id}/metal-deposits
     - GET /api/v1/companies/{company_id}/metal-balances
     - _Requirements: 7.1-7.5_
-  - [ ] 11.2 Wire new routes in router.py
+  - [x] 11.2 Wire new routes in router.py
     - _Requirements: 7.1_
 
-- [ ] 12. Phase 3 Checkpoint
+- [x] 12. Phase 3 Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
   - At this point: Company deposits work, balances are tracked, safe supply updates on deposit.
 

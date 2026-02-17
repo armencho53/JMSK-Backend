@@ -6,6 +6,7 @@ from app.presentation.api.v1.controllers import (
     address_controller,
     lookup_controller,
     metal_controller,
+    supply_tracking_controller,
 )
 
 # Legacy endpoints (to be refactored to clean architecture)
@@ -52,6 +53,12 @@ api_router.include_router(
     metal_controller.router,
     prefix="/metals",
     tags=["metals"]
+)
+
+api_router.include_router(
+    supply_tracking_controller.router,
+    prefix="",
+    tags=["supply-tracking"]
 )
 
 # Legacy endpoints

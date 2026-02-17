@@ -16,6 +16,9 @@ from app.data.models.department import Department
 from app.data.models.department_balance import DepartmentBalance
 from app.data.models.lookup_value import LookupValue
 from app.data.models.metal import Metal
+from app.data.models.safe_supply import SafeSupply
+from app.data.models.metal_transaction import MetalTransaction
+from app.data.models.company_metal_balance import CompanyMetalBalance
 
 __all__ = [
     "Tenant",
@@ -36,4 +39,7 @@ __all__ = [
     "DepartmentBalance",
     "LookupValue",
     "Metal",
+    "SafeSupply",
+    "MetalTransaction",
+    "CompanyMetalBalance",
 ]

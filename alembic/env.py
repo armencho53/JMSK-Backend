@@ -8,6 +8,13 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+# Load .env file so DATABASE_URL is available without manual export
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, rely on env vars being set
+
 from app.data.database import Base
 from app.data.models import *  # Import all models
 
@@ -16,6 +23,9 @@ config = context.config
 # Override sqlalchemy.url with DATABASE_URL environment variable if present
 database_url = os.getenv("DATABASE_URL")
 if database_url:
+    # Use psycopg2 driver for reliable Neon Postgres connectivity
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
