@@ -15,6 +15,7 @@ from app.data.models.shipment import Shipment
 from app.data.models.department import Department
 from app.data.models.department_balance import DepartmentBalance
 from app.data.models.lookup_value import LookupValue
+from app.data.models.metal import Metal
 
 __all__ = [
     "Tenant",
@@ -34,4 +35,5 @@ __all__ = [
     "Department",
     "DepartmentBalance",
     "LookupValue",
+    "Metal",
 ]
