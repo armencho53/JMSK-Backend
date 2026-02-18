@@ -1,5 +1,6 @@
 """Supply tracking business logic service"""
-from typing import List, Optional
+import logging
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.data.repositories.metal_repository import MetalRepository
 from app.data.repositories.safe_supply_repository import SafeSupplyRepository
@@ -7,12 +8,16 @@ from app.data.repositories.company_metal_balance_repository import CompanyMetalB
 from app.data.repositories.metal_transaction_repository import MetalTransactionRepository
 from app.data.repositories.company_repository import CompanyRepository
 from app.data.models.metal_transaction import MetalTransaction
+from app.data.models.order import Order
 from app.schemas.supply_tracking import (
     SafeSupplyResponse,
     MetalTransactionResponse,
     CompanyMetalBalanceResponse,
+    CastingConsumptionResult,
 )
 from app.domain.exceptions import ResourceNotFoundError, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class SupplyTrackingService:
@@ -165,6 +170,110 @@ class SupplyTrackingService:
             )
             for b in balances
         ]
+
+    def _calculate_casting_consumption(
+        self, total_weight: float, fine_percentage: float
+    ) -> Tuple[float, float]:
+        """Returns (fine_metal_grams, alloy_grams)"""
+        fine_metal_grams = total_weight * fine_percentage
+        alloy_grams = total_weight - fine_metal_grams
+        return fine_metal_grams, alloy_grams
+
+    def process_casting_consumption(
+        self, tenant_id: int, order_id: int, user_id: int
+    ) -> Optional[CastingConsumptionResult]:
+        # Fetch order
+        order = self.db.query(Order).filter(
+            Order.id == order_id,
+            Order.tenant_id == tenant_id,
+        ).first()
+        if not order:
+            raise ResourceNotFoundError("Order", order_id)
+
+        # Skip if order missing metal_type or target_weight_per_piece
+        if not order.metal_type or not order.target_weight_per_piece:
+            logger.warning(
+                "Order %d missing metal_type or target_weight_per_piece, skipping casting consumption",
+                order_id,
+            )
+            return None
+
+        if not order.quantity or order.quantity <= 0:
+            logger.warning("Order %d has zero quantity, skipping casting consumption", order_id)
+            return None
+
+        # Look up metal by code
+        metal = self.metal_repo.get_by_code(order.metal_type, tenant_id)
+        if not metal:
+            raise ValidationError(
+                f"Metal type '{order.metal_type}' does not match any active Metal record"
+            )
+        if not metal.is_active:
+            raise ValidationError(
+                f"Metal type '{order.metal_type}' is inactive"
+            )
+
+        # Calculate consumption
+        total_weight = order.quantity * order.target_weight_per_piece
+        fine_metal_grams, alloy_grams = self._calculate_casting_consumption(
+            total_weight, metal.fine_percentage
+        )
+
+        # Subtract fine metal from company balance
+        company_balance = self.balance_repo.get_or_create(
+            tenant_id, order.company_id, metal.id
+        )
+        balance_before = company_balance.balance_grams
+        company_balance.balance_grams -= fine_metal_grams
+
+        # If company balance went negative, subtract deficit from safe fine metal supply
+        safe_fine = self.safe_repo.get_or_create(tenant_id, metal.id, "FINE_METAL")
+        if company_balance.balance_grams < 0 and balance_before >= 0:
+            # Balance just crossed zero — deficit is the full negative amount
+            safe_fine.quantity_grams += company_balance.balance_grams  # adds negative = subtracts
+        elif company_balance.balance_grams < 0 and balance_before < 0:
+            # Balance was already negative — entire consumption comes from safe
+            safe_fine.quantity_grams -= fine_metal_grams
+
+        # Subtract alloy from safe
+        safe_alloy = self.safe_repo.get_or_create(tenant_id, None, "ALLOY")
+        safe_alloy.quantity_grams -= alloy_grams
+
+        # Create transaction records
+        fine_txn = MetalTransaction(
+            tenant_id=tenant_id,
+            transaction_type="MANUFACTURING_CONSUMPTION",
+            metal_id=metal.id,
+            company_id=order.company_id,
+            order_id=order_id,
+            quantity_grams=-fine_metal_grams,
+            notes=f"Casting consumption: {fine_metal_grams:.4f}g fine metal for order {order.order_number}",
+            created_by=user_id,
+        )
+        alloy_txn = MetalTransaction(
+            tenant_id=tenant_id,
+            transaction_type="MANUFACTURING_CONSUMPTION",
+            metal_id=None,
+            company_id=order.company_id,
+            order_id=order_id,
+            quantity_grams=-alloy_grams,
+            notes=f"Casting consumption: {alloy_grams:.4f}g alloy for order {order.order_number}",
+            created_by=user_id,
+        )
+        self.db.add(fine_txn)
+        self.db.add(alloy_txn)
+        self.db.commit()
+
+        return CastingConsumptionResult(
+            fine_metal_grams=fine_metal_grams,
+            alloy_grams=alloy_grams,
+            metal_code=metal.code,
+            company_id=order.company_id,
+            order_id=order_id,
+            company_balance_after=company_balance.balance_grams,
+            safe_fine_metal_after=safe_fine.quantity_grams,
+            safe_alloy_after=safe_alloy.quantity_grams,
+        )
 
     def _to_transaction_response(self, t: MetalTransaction) -> MetalTransactionResponse:
         metal_code = t.metal.code if t.metal else None

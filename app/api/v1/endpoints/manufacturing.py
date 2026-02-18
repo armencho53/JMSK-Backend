@@ -13,6 +13,7 @@ from app.data.models.department_balance import DepartmentBalance
 from app.data.models.order import Order
 from app.schemas.manufacturing import ManufacturingStepCreate, ManufacturingStepUpdate, ManufacturingStepResponse, TransferStepRequest
 from app.domain.services.lookup_service import LookupService
+from app.domain.services.supply_tracking_service import SupplyTrackingService
 from app.domain.exceptions import ValidationError
 
 router = APIRouter()
@@ -244,6 +245,22 @@ def update_step(
 
     # Weight loss calculation removed - now tracked implicitly via department balances
 
+    # Trigger casting consumption when a CASTING step is completed
+    if step_update.status == StepStatus.COMPLETED and step.step_type == "CASTING":
+        try:
+            supply_service = SupplyTrackingService(db)
+            supply_service.process_casting_consumption(
+                tenant_id=current_user.tenant_id,
+                order_id=step.order_id,
+                user_id=current_user.id,
+            )
+        except Exception as e:
+            # Log but don't block step completion if casting consumption fails
+            import logging
+            logging.getLogger(__name__).warning(
+                "Casting consumption failed for order %d: %s", step.order_id, str(e)
+            )
+
     db.commit()
     db.refresh(step)
     return step
@@ -456,6 +473,21 @@ def transfer_step(
             parent_step.weight_returned = new_total_transferred_weight
 
         # Weight loss calculation removed - now tracked implicitly via department balances
+
+        # Trigger casting consumption when a CASTING step auto-completes
+        if parent_step.step_type == "CASTING":
+            try:
+                supply_service = SupplyTrackingService(db)
+                supply_service.process_casting_consumption(
+                    tenant_id=current_user.tenant_id,
+                    order_id=parent_step.order_id,
+                    user_id=current_user.id,
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Casting consumption failed for order %d: %s", parent_step.order_id, str(e)
+                )
 
     db.commit()
     db.refresh(child_step)

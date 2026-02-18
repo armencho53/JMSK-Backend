@@ -65,6 +65,7 @@ class Order(Base):
     metal_type = Column(String(50))
     target_weight_per_piece = Column(Float)  # Expected final weight per piece in grams
     initial_total_weight = Column(Float)  # Total raw material weight in grams
+    labor_cost = Column(Float, nullable=True)  # Manual labor cost entry
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

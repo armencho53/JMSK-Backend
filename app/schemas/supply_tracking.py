@@ -64,3 +64,14 @@ class CompanyMetalBalanceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CastingConsumptionResult(BaseModel):
+    fine_metal_grams: float
+    alloy_grams: float
+    metal_code: str
+    company_id: int
+    order_id: int
+    company_balance_after: float
+    safe_fine_metal_after: float
+    safe_alloy_after: float

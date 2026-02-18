@@ -16,6 +16,7 @@ class OrderBase(BaseModel):
     metal_type: Optional[str] = None
     target_weight_per_piece: Optional[float] = None
     initial_total_weight: Optional[float] = None
+    labor_cost: Optional[float] = None
 
 class OrderCreate(OrderBase):
     contact_id: int  # Required for hierarchical contact system
@@ -31,6 +32,7 @@ class OrderUpdate(BaseModel):
     metal_type: Optional[str] = None
     target_weight_per_piece: Optional[float] = None
     initial_total_weight: Optional[float] = None
+    labor_cost: Optional[float] = None
 
 class OrderResponse(OrderBase):
     id: int

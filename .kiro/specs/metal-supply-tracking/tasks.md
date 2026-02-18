@@ -161,26 +161,26 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
 
 ### Phase 4: Casting Consumption & Order Labor Cost
 
-- [ ] 13. Add labor_cost to Order model
-  - [ ] 13.1 Add `labor_cost = Column(Float, nullable=True)` to Order model in `app/data/models/order.py`
+- [x] 13. Add labor_cost to Order model
+  - [x] 13.1 Add `labor_cost = Column(Float, nullable=True)` to Order model in `app/data/models/order.py`
     - _Requirements: 5.1_
-  - [ ] 13.2 Update Order schemas in `app/schemas/order.py` to include labor_cost in OrderCreate, OrderUpdate, and OrderResponse
+  - [x] 13.2 Update Order schemas in `app/schemas/order.py` to include labor_cost in OrderCreate, OrderUpdate, and OrderResponse
     - _Requirements: 5.2, 5.3_
-  - [ ] 13.3 Create Alembic migration to add labor_cost column to orders table
+  - [x] 13.3 Create Alembic migration to add labor_cost column to orders table
     - _Requirements: 13.5_
 
-- [ ] 14. Implement casting consumption logic
-  - [ ] 14.1 Add `_calculate_casting_consumption(total_weight, fine_percentage)` method to SupplyTrackingService
+- [x] 14. Implement casting consumption logic
+  - [x] 14.1 Add `_calculate_casting_consumption(total_weight, fine_percentage)` method to SupplyTrackingService
     - Returns (fine_metal_grams, alloy_grams) where fine_metal = total_weight * fine_percentage, alloy = total_weight - fine_metal
     - _Requirements: 6.1, 6.2_
-  - [ ] 14.2 Add `process_casting_consumption(tenant_id, order_id, user_id)` method to SupplyTrackingService
+  - [x] 14.2 Add `process_casting_consumption(tenant_id, order_id, user_id)` method to SupplyTrackingService
     - Fetch order, validate metal_type exists as active Metal, calculate consumption
     - Subtract fine_metal from company balance, subtract alloy from safe
     - If company balance goes negative, subtract deficit from fine metal safe supply
     - Create MANUFACTURING_CONSUMPTION transactions
     - Skip if order missing metal_type or target_weight_per_piece
     - _Requirements: 6.1-6.9, 3.5, 2.5, 2.6_
-  - [ ] 14.3 Add CastingConsumptionResult schema to `app/schemas/supply_tracking.py`
+  - [x] 14.3 Add CastingConsumptionResult schema to `app/schemas/supply_tracking.py`
     - _Requirements: 6.1_
   - [ ]* 14.4 Write property test for conservation of mass (Property 4)
     - **Property 4: Conservation of mass in casting calculation**
@@ -189,8 +189,8 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
     - **Property 7: Casting consumption balance adjustments**
     - **Validates: Requirements 3.5, 2.5, 2.6, 6.5, 6.6, 6.7**
 
-- [ ] 15. Integrate casting consumption with manufacturing step completion
-  - [ ] 15.1 Modify the manufacturing step completion flow to call `process_casting_consumption()` when a step with step_type "CASTING" is completed
+- [x] 15. Integrate casting consumption with manufacturing step completion
+  - [x] 15.1 Modify the manufacturing step completion flow to call `process_casting_consumption()` when a step with step_type "CASTING" is completed
     - Check if step_type == "CASTING" and status is being set to COMPLETED
     - Call SupplyTrackingService.process_casting_consumption()
     - This integrates with the existing manufacturing endpoint (legacy or clean architecture)
@@ -201,50 +201,50 @@ Implementation is broken into 5 deployable phases. After each phase, the system 
     - Test order with missing metal_type skips calculation
     - _Requirements: 6.8, 6.9_
 
-- [ ] 16. Phase 4 Checkpoint
+- [x] 16. Phase 4 Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
   - At this point: Full backend is complete. Casting auto-calculates consumption, labor cost on orders, all balance adjustments work.
 
 ### Phase 5: Frontend Screens
 
-- [ ] 17. Create Metal management page
-  - [ ] 17.1 Create `useMetals()` hook in `src/hooks/useMetals.ts`
+- [x] 17. Create Metal management page
+  - [x] 17.1 Create `useMetals()` hook in `src/hooks/useMetals.ts`
     - CRUD operations via React Query: list, create, update, deactivate
     - _Requirements: 11.1_
-  - [ ] 17.2 Create `src/pages/Metals.tsx` page
+  - [x] 17.2 Create `src/pages/Metals.tsx` page
     - Table with code, name, fine_percentage (as %), average_cost_per_gram
     - Add/Edit/Deactivate controls visible only to manager+ roles
     - Fine percentage displayed as percentage (e.g., 58.5%)
     - _Requirements: 11.1-11.6_
-  - [ ] 17.3 Create `src/components/MetalFormModal.tsx`
+  - [x] 17.3 Create `src/components/MetalFormModal.tsx`
     - Form for creating/editing metals
     - Code field disabled on edit
     - Fine percentage input as percentage (user enters 58.5, stored as 0.585)
     - _Requirements: 11.2, 11.3_
-  - [ ] 17.4 Add Metals page to navigation in `src/components/Layout.tsx` and router
+  - [x] 17.4 Add Metals page to navigation in `src/components/Layout.tsx` and router
     - _Requirements: 11.1_
 
-- [ ] 18. Create Company Metal Balance view and deposit flow
-  - [ ] 18.1 Create `useCompanyMetalBalances(companyId)` hook in `src/hooks/useCompanyMetalBalances.ts`
+- [x] 18. Create Company Metal Balance view and deposit flow
+  - [x] 18.1 Create `useCompanyMetalBalances(companyId)` hook in `src/hooks/useCompanyMetalBalances.ts`
     - Fetch balances, record deposit
     - _Requirements: 12.1_
-  - [ ] 18.2 Create `src/components/CompanyMetalBalances.tsx` component
+  - [x] 18.2 Create `src/components/CompanyMetalBalances.tsx` component
     - Table of per-metal balances, negative balances highlighted in red
     - "Record Deposit" button for manager+ roles
     - _Requirements: 12.1-12.3_
-  - [ ] 18.3 Create `src/components/MetalDepositModal.tsx`
+  - [x] 18.3 Create `src/components/MetalDepositModal.tsx`
     - Form: select metal (from useMetals), enter quantity in grams
     - Validates positive quantity
     - _Requirements: 12.3_
-  - [ ] 18.4 Integrate CompanyMetalBalances into company detail page
+  - [x] 18.4 Integrate CompanyMetalBalances into company detail page
     - _Requirements: 12.1_
 
-- [ ] 19. Update Order form with labor cost field
-  - [ ] 19.1 Add labor_cost field to `src/components/OrderFormModal.tsx`
+- [x] 19. Update Order form with labor cost field
+  - [x] 19.1 Add labor_cost field to `src/components/OrderFormModal.tsx`
     - Optional numeric input for labor cost
     - _Requirements: 5.3_
 
-- [ ] 20. Final Checkpoint
+- [x] 20. Final Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
   - Full feature is complete: backend API, frontend screens, casting calculations, balance tracking.
 
