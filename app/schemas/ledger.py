@@ -8,7 +8,7 @@ class LedgerEntryCreate(BaseModel):
     date: date
     department_id: int
     order_id: int
-    metal_type: str
+    metal_id: int
     direction: Literal["IN", "OUT"]
     quantity: float
     weight: float
@@ -33,7 +33,7 @@ class LedgerEntryUpdate(BaseModel):
     date: Optional[date] = None
     department_id: Optional[int] = None
     order_id: Optional[int] = None
-    metal_type: Optional[str] = None
+    metal_id: Optional[int] = None
     direction: Optional[Literal["IN", "OUT"]] = None
     quantity: Optional[float] = None
     weight: Optional[float] = None
@@ -61,7 +61,9 @@ class LedgerEntryResponse(BaseModel):
     department_id: int
     order_id: int
     order_number: str
-    metal_type: str
+    metal_id: int
+    metal_code: str
+    metal_name: str
     direction: str
     qty_in: Optional[float] = None
     qty_out: Optional[float] = None
@@ -90,13 +92,16 @@ class LedgerEntryResponse(BaseModel):
             order_number = getattr(order, "order_number", "") if order else ""
             # Convert ORM object to dict for mutation
             obj = {}
+            metal = getattr(data, "metal", None)
             for field in [
                 "id", "tenant_id", "date", "department_id", "order_id",
-                "metal_type", "direction", "fine_weight", "notes",
+                "metal_id", "direction", "fine_weight", "notes",
                 "is_archived", "created_by", "created_at", "updated_at",
             ]:
                 obj[field] = getattr(data, field, None)
             obj["order_number"] = order_number
+            obj["metal_code"] = getattr(metal, "code", "") if metal else ""
+            obj["metal_name"] = getattr(metal, "name", "") if metal else ""
         else:
             direction = data.get("direction")
             quantity = data.get("quantity")
@@ -125,7 +130,8 @@ class ArchiveRequest(BaseModel):
 
 
 class MetalBalanceItem(BaseModel):
-    metal_type: str
+    metal_id: int
+    metal_name: str
     fine_weight_balance: float
 
 

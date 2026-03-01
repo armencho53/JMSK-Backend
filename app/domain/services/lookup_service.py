@@ -17,13 +17,6 @@ from app.domain.exceptions import (
 # Default seed data for new tenants
 # Each tuple: (category, code, display_label, sort_order)
 DEFAULT_LOOKUP_VALUES = [
-    ("metal_type", "GOLD_24K", "Gold 24K", 0),
-    ("metal_type", "GOLD_22K", "Gold 22K", 1),
-    ("metal_type", "GOLD_18K", "Gold 18K", 2),
-    ("metal_type", "GOLD_14K", "Gold 14K", 3),
-    ("metal_type", "SILVER_925", "Silver 925", 4),
-    ("metal_type", "PLATINUM", "Platinum", 5),
-    ("metal_type", "OTHER", "Other", 6),
     ("step_type", "DESIGN", "Design", 0),
     ("step_type", "CASTING", "Casting", 1),
     ("step_type", "STONE_SETTING", "Stone Setting", 2),

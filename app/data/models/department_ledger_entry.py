@@ -12,7 +12,7 @@ class DepartmentLedgerEntry(Base):
     date = Column(Date, nullable=False, default=date.today)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
-    metal_type = Column(String(50), nullable=False)
+    metal_id = Column(Integer, ForeignKey("metals.id"), nullable=False)
     direction = Column(String(3), nullable=False)  # "IN" or "OUT"
     quantity = Column(Float, nullable=False)
     weight = Column(Float, nullable=False)          # gross weight in grams
@@ -27,4 +27,5 @@ class DepartmentLedgerEntry(Base):
     tenant = relationship("Tenant", back_populates="ledger_entries")
     department = relationship("Department")
     order = relationship("Order")
+    metal = relationship("Metal")
     creator = relationship("User")

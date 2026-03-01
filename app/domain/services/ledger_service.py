@@ -23,31 +23,33 @@ class LedgerService:
         self.repository = LedgerRepository(db)
         self.metal_service = MetalService(db)
 
-    def _compute_fine_weight(self, metal_type: str, weight: float, direction: str, tenant_id: int) -> float:
+    def _compute_fine_weight(self, metal_id: int, weight: float, direction: str, tenant_id: int) -> float:
         """Compute fine weight = weight × purity_factor, negated for OUT direction."""
         try:
-            metal = self.metal_service.get_by_code(metal_type, tenant_id)
+            metal = self.metal_service.get_by_id(metal_id, tenant_id)
         except ResourceNotFoundError:
-            raise ValidationError(f"Metal type '{metal_type}' not found for this tenant")
+            raise ValidationError(f"Metal with id '{metal_id}' not found for this tenant")
+        if not metal.is_active:
+            raise ValidationError(f"Metal with id {metal_id} is inactive")
         fine_weight = weight * metal.fine_percentage
         if direction == "OUT":
             fine_weight = -fine_weight
         return fine_weight
 
-    def _update_balance(self, tenant_id: int, department_id: int, metal_type: str, weight_delta: float) -> None:
+    def _update_balance(self, tenant_id: int, department_id: int, metal_id: int, weight_delta: float) -> None:
         """Update department balance by weight_delta (positive for IN, negative for OUT)."""
-        self.repository.upsert_department_balance(tenant_id, department_id, metal_type, weight_delta)
+        self.repository.upsert_department_balance(tenant_id, department_id, metal_id, weight_delta)
 
     def create_entry(self, data: LedgerEntryCreate, tenant_id: int, user_id: int) -> LedgerEntryResponse:
         """Create a new ledger entry, compute fine weight, and update department balance."""
-        fine_weight = self._compute_fine_weight(data.metal_type, data.weight, data.direction, tenant_id)
+        fine_weight = self._compute_fine_weight(data.metal_id, data.weight, data.direction, tenant_id)
 
         entry = DepartmentLedgerEntry(
             tenant_id=tenant_id,
             date=data.date,
             department_id=data.department_id,
             order_id=data.order_id,
-            metal_type=data.metal_type,
+            metal_id=data.metal_id,
             direction=data.direction,
             quantity=data.quantity,
             weight=data.weight,
@@ -59,7 +61,7 @@ class LedgerService:
         self.db.flush()
 
         weight_delta = data.weight if data.direction == "IN" else -data.weight
-        self._update_balance(tenant_id, data.department_id, data.metal_type, weight_delta)
+        self._update_balance(tenant_id, data.department_id, data.metal_id, weight_delta)
 
         self.db.commit()
         self.db.refresh(entry)
@@ -75,11 +77,11 @@ class LedgerService:
         old_weight = entry.weight
         old_direction = entry.direction
         old_department_id = entry.department_id
-        old_metal_type = entry.metal_type
+        old_metal_id = entry.metal_id
 
         # Reverse old balance impact
         old_delta = old_weight if old_direction == "IN" else -old_weight
-        self._update_balance(tenant_id, old_department_id, old_metal_type, -old_delta)
+        self._update_balance(tenant_id, old_department_id, old_metal_id, -old_delta)
 
         # Apply updates
         update_data = data.model_dump(exclude_unset=True)
@@ -87,11 +89,11 @@ class LedgerService:
             setattr(entry, field, value)
 
         # Recompute fine weight with current values
-        entry.fine_weight = self._compute_fine_weight(entry.metal_type, entry.weight, entry.direction, tenant_id)
+        entry.fine_weight = self._compute_fine_weight(entry.metal_id, entry.weight, entry.direction, tenant_id)
 
         # Apply new balance impact
         new_delta = entry.weight if entry.direction == "IN" else -entry.weight
-        self._update_balance(tenant_id, entry.department_id, entry.metal_type, new_delta)
+        self._update_balance(tenant_id, entry.department_id, entry.metal_id, new_delta)
 
         self.db.commit()
         self.db.refresh(entry)
@@ -105,7 +107,7 @@ class LedgerService:
 
         # Reverse balance impact
         delta = entry.weight if entry.direction == "IN" else -entry.weight
-        self._update_balance(tenant_id, entry.department_id, entry.metal_type, -delta)
+        self._update_balance(tenant_id, entry.department_id, entry.metal_id, -delta)
 
         self.db.delete(entry)
         self.db.commit()
@@ -148,7 +150,8 @@ class LedgerService:
 
             if fine_weight_balance != 0:
                 balances.append(MetalBalanceItem(
-                    metal_type=row["metal_type"],
+                    metal_id=row["metal_id"],
+                    metal_name=row["metal_name"],
                     fine_weight_balance=fine_weight_balance,
                 ))
 

@@ -32,17 +32,6 @@ def seed_data(db_session):
     db_session.add_all([user, dept, dept2, company])
     db_session.flush()
 
-    contact = Contact(id=1, tenant_id=1, company_id=1, name="John")
-    db_session.add(contact)
-    db_session.flush()
-
-    order = Order(
-        id=1, tenant_id=1, order_number="ORD-001",
-        contact_id=1, company_id=1, metal_type="GOLD_22K",
-    )
-    db_session.add(order)
-    db_session.flush()
-
     metal = Metal(
         id=1, tenant_id=1, code="GOLD_22K",
         name="Gold 22K", fine_percentage=0.916,
@@ -52,12 +41,23 @@ def seed_data(db_session):
         name="Silver 925", fine_percentage=0.925,
     )
     db_session.add_all([metal, metal2])
+    db_session.flush()
+
+    contact = Contact(id=1, tenant_id=1, company_id=1, name="John")
+    db_session.add(contact)
+    db_session.flush()
+
+    order = Order(
+        id=1, tenant_id=1, order_number="ORD-001",
+        contact_id=1, company_id=1, metal_id=1,
+    )
+    db_session.add(order)
     db_session.commit()
 
     return {
         "tenant_id": 1, "user_id": 1,
         "department_id": 1, "department_id_2": 2,
-        "order_id": 1, "metal_code": "GOLD_22K",
+        "order_id": 1, "metal_id": 1,
     }
 
 
@@ -66,7 +66,7 @@ def _make_create_data(**overrides):
         date=date(2025, 1, 15),
         department_id=1,
         order_id=1,
-        metal_type="GOLD_22K",
+        metal_id=1,
         direction="IN",
         quantity=5.0,
         weight=28.9,
@@ -109,7 +109,7 @@ class TestCreateEntry:
         svc.create_entry(data, seed_data["tenant_id"], seed_data["user_id"])
 
         bal = db_session.query(DepartmentBalance).filter_by(
-            department_id=1, metal_type="GOLD_22K"
+            department_id=1, metal_id=1
         ).first()
         assert bal is not None
         assert bal.balance_grams == pytest.approx(20.0)
@@ -128,14 +128,14 @@ class TestCreateEntry:
         )
 
         bal = db_session.query(DepartmentBalance).filter_by(
-            department_id=1, metal_type="GOLD_22K"
+            department_id=1, metal_id=1
         ).first()
         assert bal.balance_grams == pytest.approx(35.0)
 
-    def test_rejects_invalid_metal_type(self, db_session, seed_data):
+    def test_rejects_invalid_metal_id(self, db_session, seed_data):
         svc = LedgerService(db_session)
-        data = _make_create_data(metal_type="UNOBTANIUM")
-        with pytest.raises(ValidationError, match="Metal type 'UNOBTANIUM' not found"):
+        data = _make_create_data(metal_id=9999)
+        with pytest.raises(ValidationError, match="Metal with id '9999' not found"):
             svc.create_entry(data, seed_data["tenant_id"], seed_data["user_id"])
 
     def test_stores_notes_and_created_by(self, db_session, seed_data):
@@ -175,7 +175,7 @@ class TestUpdateEntry:
             seed_data["tenant_id"],
         )
         bal = db_session.query(DepartmentBalance).filter_by(
-            department_id=1, metal_type="GOLD_22K"
+            department_id=1, metal_id=1
         ).first()
         assert bal.balance_grams == pytest.approx(30.0)
 
@@ -192,7 +192,7 @@ class TestUpdateEntry:
             seed_data["tenant_id"],
         )
         bal = db_session.query(DepartmentBalance).filter_by(
-            department_id=1, metal_type="GOLD_22K"
+            department_id=1, metal_id=1
         ).first()
         # Was +20, now should be -20
         assert bal.balance_grams == pytest.approx(-20.0)
@@ -223,7 +223,7 @@ class TestDeleteEntry:
         svc.delete_entry(created.id, seed_data["tenant_id"])
 
         bal = db_session.query(DepartmentBalance).filter_by(
-            department_id=1, metal_type="GOLD_22K"
+            department_id=1, metal_id=1
         ).first()
         assert bal.balance_grams == pytest.approx(0.0)
 
@@ -316,7 +316,8 @@ class TestGetSummary:
         assert summary.total_qty_held == pytest.approx(7.0)
         assert summary.total_qty_out == pytest.approx(3.0)
         assert len(summary.balances) == 1
-        assert summary.balances[0].metal_type == "GOLD_22K"
+        assert summary.balances[0].metal_id == 1
+        assert summary.balances[0].metal_name == "Gold 22K"
         expected_fw = (50.0 * 0.916) + (-15.0 * 0.916)
         assert summary.balances[0].fine_weight_balance == pytest.approx(expected_fw)
 

@@ -24,7 +24,8 @@ class DepartmentResponse(DepartmentBase):
 
 class DepartmentBalanceResponse(BaseModel):
     id: int
-    metal_type: str
+    metal_id: int
+    metal_name: str
     balance_grams: float
 
     class Config:

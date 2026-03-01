@@ -9,8 +9,7 @@ from app.data.models.order import Order
 from app.data.models.contact import Contact
 from app.data.models.manufacturing_step import ManufacturingStep
 from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse
-from app.domain.services.lookup_service import LookupService
-from app.domain.exceptions import ValidationError
+from app.data.repositories.metal_repository import MetalRepository
 
 router = APIRouter()
 
@@ -27,10 +26,11 @@ def list_orders(
 ):
     from sqlalchemy.orm import joinedload
     
-    # Eagerly load contact and company relationships (Requirements 3.1, 7.3)
+    # Eagerly load contact, company, and metal relationships (Requirements 3.1, 7.3)
     orders = db.query(Order).options(
         joinedload(Order.contact).joinedload(Contact.company),
-        joinedload(Order.company)
+        joinedload(Order.company),
+        joinedload(Order.metal)
     ).filter(
         Order.tenant_id == current_user.tenant_id
     ).offset(skip).limit(limit).all()
@@ -45,14 +45,15 @@ def create_order(
     order_number = generate_order_number(current_user.tenant_id, db)
     order_data = order.dict()
 
-    # Validate metal_type against lookup values if provided (Requirement 6.1)
-    metal_type = order_data.get('metal_type')
-    if metal_type:
-        lookup_service = LookupService(db)
-        try:
-            lookup_service.validate_lookup_code(current_user.tenant_id, "metal_type", metal_type)
-        except ValidationError as e:
-            raise HTTPException(status_code=400, detail=e.message)
+    # Validate metal_id against metals table if provided (Requirements 8.1, 8.2, 8.3)
+    metal_id = order_data.get('metal_id')
+    if metal_id is not None:
+        metal_repo = MetalRepository(db)
+        metal = metal_repo.get_by_id(metal_id, tenant_id=current_user.tenant_id)
+        if not metal:
+            raise HTTPException(status_code=400, detail=f"Metal with id {metal_id} not found")
+        if not metal.is_active:
+            raise HTTPException(status_code=400, detail=f"Metal with id {metal_id} is inactive")
 
     # Validate contact_id and auto-populate company_id
     contact_id = order_data.get('contact_id')
@@ -91,10 +92,11 @@ def get_order(
 ):
     from sqlalchemy.orm import joinedload
     
-    # Eagerly load contact and company relationships (Requirements 3.1, 7.3)
+    # Eagerly load contact, company, and metal relationships (Requirements 3.1, 7.3)
     order = db.query(Order).options(
         joinedload(Order.contact).joinedload(Contact.company),
-        joinedload(Order.company)
+        joinedload(Order.company),
+        joinedload(Order.metal)
     ).filter(
         Order.id == order_id,
         Order.tenant_id == current_user.tenant_id
@@ -122,14 +124,15 @@ def update_order(
 
     update_data = order_update.dict(exclude_unset=True)
 
-    # Validate metal_type against lookup values if provided (Requirement 6.1)
-    metal_type = update_data.get('metal_type')
-    if metal_type:
-        lookup_service = LookupService(db)
-        try:
-            lookup_service.validate_lookup_code(current_user.tenant_id, "metal_type", metal_type)
-        except ValidationError as e:
-            raise HTTPException(status_code=400, detail=e.message)
+    # Validate metal_id against metals table if provided (Requirements 8.1, 8.2, 8.3)
+    metal_id = update_data.get('metal_id')
+    if metal_id is not None:
+        metal_repo = MetalRepository(db)
+        metal = metal_repo.get_by_id(metal_id, tenant_id=current_user.tenant_id)
+        if not metal:
+            raise HTTPException(status_code=400, detail=f"Metal with id {metal_id} not found")
+        if not metal.is_active:
+            raise HTTPException(status_code=400, detail=f"Metal with id {metal_id} is inactive")
 
     # Handle contact_id update
     contact_id = update_data.get('contact_id')
