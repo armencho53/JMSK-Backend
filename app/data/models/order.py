@@ -37,7 +37,6 @@ class Order(Base):
         tenant: The tenant this order belongs to
         contact: The contact (individual) who placed this order
         company: The company this order belongs to (must match contact's company)
-        manufacturing_steps: All manufacturing steps for this order
         shipments: All shipments for this order
     
     Constraints:
@@ -65,6 +64,7 @@ class Order(Base):
     metal_type = Column(String(50))
     target_weight_per_piece = Column(Float)  # Expected final weight per piece in grams
     initial_total_weight = Column(Float)  # Total raw material weight in grams
+    labor_cost = Column(Float, nullable=True)  # Manual labor cost entry
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -73,5 +73,4 @@ class Order(Base):
     tenant = relationship("Tenant", back_populates="orders")
     contact = relationship("Contact", back_populates="orders", foreign_keys="[Order.contact_id]")
     company = relationship("Company", back_populates="orders", foreign_keys="[Order.company_id]")
-    manufacturing_steps = relationship("ManufacturingStep", back_populates="order")
     shipments = relationship("Shipment", back_populates="order")

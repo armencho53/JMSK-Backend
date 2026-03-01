@@ -35,6 +35,10 @@ def clean_database_url(url: str) -> str:
 # Clean the database URL
 database_url = clean_database_url(settings.DATABASE_URL)
 
+# Use psycopg (v3) driver for PostgreSQL — handles Neon + SSL natively
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
 # Detect database type
 is_sqlite = database_url.startswith("sqlite")
 

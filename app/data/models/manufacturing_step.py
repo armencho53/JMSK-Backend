@@ -1,19 +1,24 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Float
+# ARCHIVED: This model is kept for reference only.
+# The manufacturing_steps table has been renamed to manufacturing_steps_archive
+# via Alembic migration. The Department Ledger system replaces this functionality.
+# See app/data/models/department_ledger_entry.py
+
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime
 from app.data.database import Base
-from app.domain.enums import StepStatus
+
 
 class ManufacturingStep(Base):
-    __tablename__ = "manufacturing_steps"
-    
+    __tablename__ = "manufacturing_steps_archive"
+
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
-    parent_step_id = Column(Integer, ForeignKey("manufacturing_steps.id"), nullable=True, index=True)
+    parent_step_id = Column(Integer, ForeignKey("manufacturing_steps_archive.id"), nullable=True, index=True)
     step_type = Column(String(50), nullable=True)
     description = Column(Text)
-    status = Column(Enum(StepStatus, name='stepstatus',  values_callable=lambda x: [e.value for e in x]), default=StepStatus.IN_PROGRESS)
+    status = Column(String(20))
 
     # Department and Worker tracking
     department = Column(String)
@@ -22,25 +27,23 @@ class ManufacturingStep(Base):
     # Tracking timestamps
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
-    received_at = Column(DateTime)  # When worker received pieces
+    received_at = Column(DateTime)
 
     # Transfer tracking
-    transferred_by = Column(String)  # Worker who sent pieces
-    received_by = Column(String)  # Worker who received pieces
+    transferred_by = Column(String)
+    received_by = Column(String)
 
     # Enhanced quantity tracking
     quantity_received = Column(Float)
     quantity_returned = Column(Float)
 
     # Enhanced weight tracking
-    weight_received = Column(Float)  # Weight when received in grams
-    weight_returned = Column(Float)  # Weight when returned in grams
+    weight_received = Column(Float)
+    weight_returned = Column(Float)
 
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    tenant = relationship("Tenant", back_populates="manufacturing_steps")
-    order = relationship("Order", back_populates="manufacturing_steps")
+
+    # Self-referential relationship for parent/child steps
     children = relationship("ManufacturingStep", backref=backref("parent", remote_side=[id]))

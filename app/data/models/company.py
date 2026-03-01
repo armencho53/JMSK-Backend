@@ -62,3 +62,4 @@ class Company(Base):
     contacts = relationship("Contact", back_populates="company", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="company", foreign_keys="Order.company_id")
     addresses = relationship("Address", back_populates="company", foreign_keys="[Address.company_id]", cascade="all, delete-orphan")
+    metal_balances = relationship("CompanyMetalBalance", back_populates="company")
