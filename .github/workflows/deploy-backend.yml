@@ -271,10 +271,102 @@ jobs:
           echo "should-deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
           echo "Determined environment: $ENVIRONMENT (deploy: $SHOULD_DEPLOY)"
 
+  migrate:
+    name: Run DB Migrations (${{ needs.determine-environment.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: [test, build, determine-environment]
+    if: needs.determine-environment.outputs.should-deploy == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install alembic sqlalchemy psycopg2-binary
+
+      - name: Select database connection string
+        id: db-url
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+        run: |
+          case "$DEPLOY_ENV" in
+            "prod")
+              DB_URL="${{ secrets.DATABASE_URL_PROD }}"
+              ;;
+            *)
+              DB_URL="${{ secrets.DATABASE_URL_DEV }}"
+              ;;
+          esac
+
+          if [ -z "$DB_URL" ]; then
+            echo "❌ DATABASE_URL secret not set for environment: $DEPLOY_ENV"
+            echo "Set DATABASE_URL_DEV or DATABASE_URL_PROD in GitHub repository secrets."
+            exit 1
+          fi
+
+          echo "::add-mask::$DB_URL"
+          echo "db_url=$DB_URL" >> $GITHUB_OUTPUT
+          echo "✅ Database URL resolved for $DEPLOY_ENV"
+
+      - name: Check migration status
+        id: check
+        env:
+          DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+        run: |
+          echo "🔍 Checking if database needs migrations..."
+
+          CURRENT=$(alembic current 2>&1 | grep -oP '[a-f0-9]{12}' | head -1 || echo "none")
+          HEAD=$(alembic heads 2>&1 | grep -oP '[a-f0-9]{12}' | head -1 || echo "none")
+
+          echo "Current revision: $CURRENT"
+          echo "Head revision:    $HEAD"
+
+          if [ "$CURRENT" = "$HEAD" ] && [ "$CURRENT" != "none" ]; then
+            echo "✅ Database is up to date — no migrations needed"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Pending migrations detected"
+            echo "needed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run alembic upgrade head
+        if: steps.check.outputs.needed == 'true'
+        env:
+          DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+        run: |
+          echo "🚀 Applying migrations..."
+          if alembic upgrade head; then
+            echo "✅ Migrations applied successfully"
+          else
+            echo "❌ Migration failed — aborting deployment"
+            exit 1
+          fi
+
+      - name: Migration summary
+        env:
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          NEEDED: ${{ steps.check.outputs.needed }}
+        run: |
+          echo "## 🗄️ Database Migration ($DEPLOY_ENV)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$NEEDED" = "true" ]; then
+            echo "**Status:** ✅ Migrations applied" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ✅ Already up to date — skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
   deploy:
     name: Deploy to ${{ needs.determine-environment.outputs.environment }}
     runs-on: ubuntu-latest
-    needs: [test, build, determine-environment]
+    needs: [test, build, determine-environment, migrate]
     if: needs.determine-environment.outputs.should-deploy == 'true'
     
     environment: ${{ needs.determine-environment.outputs.environment }}
