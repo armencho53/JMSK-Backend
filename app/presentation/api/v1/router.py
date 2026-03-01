@@ -7,6 +7,7 @@ from app.presentation.api.v1.controllers import (
     lookup_controller,
     metal_controller,
     supply_tracking_controller,
+    ledger_controller,
 )
 
 # Legacy endpoints (to be refactored to clean architecture)
@@ -17,7 +18,6 @@ from app.api.v1.endpoints import (
     companies,
     supplies,
     orders,
-    manufacturing,
     shipments,
     departments
 )
@@ -61,6 +61,12 @@ api_router.include_router(
     tags=["supply-tracking"]
 )
 
+api_router.include_router(
+    ledger_controller.router,
+    prefix="/department-ledger",
+    tags=["department-ledger"]
+)
+
 # Legacy endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
@@ -68,6 +74,5 @@ api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
 api_router.include_router(companies.router, prefix="/companies", tags=["companies"])
 api_router.include_router(supplies.router, prefix="/supplies", tags=["supplies"])
 api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
-api_router.include_router(manufacturing.router, prefix="/manufacturing", tags=["manufacturing"])
 api_router.include_router(shipments.router, prefix="/shipments", tags=["shipments"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])

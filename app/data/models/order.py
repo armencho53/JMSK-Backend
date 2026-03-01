@@ -37,7 +37,6 @@ class Order(Base):
         tenant: The tenant this order belongs to
         contact: The contact (individual) who placed this order
         company: The company this order belongs to (must match contact's company)
-        manufacturing_steps: All manufacturing steps for this order
         shipments: All shipments for this order
     
     Constraints:
@@ -74,5 +73,4 @@ class Order(Base):
     tenant = relationship("Tenant", back_populates="orders")
     contact = relationship("Contact", back_populates="orders", foreign_keys="[Order.contact_id]")
     company = relationship("Company", back_populates="orders", foreign_keys="[Order.company_id]")
-    manufacturing_steps = relationship("ManufacturingStep", back_populates="order")
     shipments = relationship("Shipment", back_populates="order")

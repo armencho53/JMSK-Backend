@@ -18,12 +18,6 @@ class OrderStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
-class StepStatus(str, enum.Enum):
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-
 class ShipmentStatus(str, enum.Enum):
     PREPARING = "PREPARING"
     SHIPPED = "SHIPPED"
