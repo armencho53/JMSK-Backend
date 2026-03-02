@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -30,6 +30,20 @@ class DepartmentBalanceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_metal_name(cls, data):
+        if hasattr(data, "__dict__"):
+            metal = getattr(data, "metal", None)
+            obj = {
+                "id": getattr(data, "id", None),
+                "metal_id": getattr(data, "metal_id", None),
+                "metal_name": getattr(metal, "name", "") if metal else "",
+                "balance_grams": getattr(data, "balance_grams", 0.0),
+            }
+            return obj
+        return data
 
 class DepartmentWithBalancesResponse(DepartmentResponse):
     balances: List[DepartmentBalanceResponse] = []

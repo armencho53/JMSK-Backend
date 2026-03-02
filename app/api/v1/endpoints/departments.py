@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
@@ -24,7 +24,9 @@ def list_departments(
     current_user: User = Depends(get_current_active_user)
 ):
     """List all departments with their balances for current tenant"""
-    departments = db.query(Department).filter(
+    departments = db.query(Department).options(
+        joinedload(Department.balances).joinedload(DepartmentBalance.metal)
+    ).filter(
         Department.tenant_id == current_user.tenant_id
     ).offset(skip).limit(limit).all()
     return departments
@@ -65,7 +67,9 @@ def get_department(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get a single department with its balances"""
-    department = db.query(Department).filter(
+    department = db.query(Department).options(
+        joinedload(Department.balances).joinedload(DepartmentBalance.metal)
+    ).filter(
         Department.id == department_id,
         Department.tenant_id == current_user.tenant_id
     ).first()
@@ -156,7 +160,9 @@ def get_department_balances(
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    balances = db.query(DepartmentBalance).filter(
+    balances = db.query(DepartmentBalance).options(
+        joinedload(DepartmentBalance.metal)
+    ).filter(
         DepartmentBalance.department_id == department_id
     ).all()
 
@@ -168,7 +174,9 @@ def get_balances_summary(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get all departments with their balances for dashboard display"""
-    departments = db.query(Department).filter(
+    departments = db.query(Department).options(
+        joinedload(Department.balances).joinedload(DepartmentBalance.metal)
+    ).filter(
         Department.tenant_id == current_user.tenant_id,
         Department.is_active == True
     ).all()
