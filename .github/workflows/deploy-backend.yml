@@ -320,11 +320,21 @@ jobs:
         id: check
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+          SECRET_KEY: "migration-only-not-used"
         run: |
           echo "🔍 Checking if database needs migrations..."
 
-          CURRENT=$(alembic current 2>&1 | grep -oP '[a-f0-9]{12}' | head -1 || echo "none")
-          HEAD=$(alembic heads 2>&1 | grep -oP '[a-f0-9]{12}' | head -1 || echo "none")
+          # Get current DB revision (first word of output is the revision ID)
+          CURRENT=$(alembic current 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
+          if [ -z "$CURRENT" ]; then
+            CURRENT="none"
+          fi
+
+          # Get the latest head revision
+          HEAD=$(alembic heads 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
+          if [ -z "$HEAD" ]; then
+            HEAD="none"
+          fi
 
           echo "Current revision: $CURRENT"
           echo "Head revision:    $HEAD"
@@ -333,7 +343,7 @@ jobs:
             echo "✅ Database is up to date — no migrations needed"
             echo "needed=false" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Pending migrations detected"
+            echo "⚠️ Pending migrations detected (current=$CURRENT, head=$HEAD)"
             echo "needed=true" >> $GITHUB_OUTPUT
           fi
 
@@ -341,6 +351,7 @@ jobs:
         if: steps.check.outputs.needed == 'true'
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+          SECRET_KEY: "migration-only-not-used"
         run: |
           echo "🚀 Applying migrations..."
           if alembic upgrade head; then
