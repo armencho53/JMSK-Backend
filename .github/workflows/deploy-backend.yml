@@ -316,65 +316,72 @@ jobs:
           echo "db_url=$DB_URL" >> $GITHUB_OUTPUT
           echo "✅ Database URL resolved for $DEPLOY_ENV"
 
-      - name: Check migration status
+      - name: Check and fix migration state
         id: check
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
           SECRET_KEY: "migration-only-not-used"
         run: |
-          echo "🔍 Checking if database needs migrations..."
+          echo "🔍 Checking database migration state..."
 
-          # Get current DB revision (first word of output is the revision ID)
-          CURRENT=$(alembic current 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
-          if [ -z "$CURRENT" ]; then
-            CURRENT="none"
-          fi
-
-          # Get the latest head revision
-          HEAD=$(alembic heads 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
-          if [ -z "$HEAD" ]; then
-            HEAD="none"
-          fi
-
-          echo "Current revision: $CURRENT"
-          echo "Head revision:    $HEAD"
-
-          if [ "$CURRENT" = "$HEAD" ] && [ "$CURRENT" != "none" ]; then
-            echo "✅ Database is up to date — no migrations needed"
-            echo "needed=false" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Pending migrations detected (current=$CURRENT, head=$HEAD)"
-            echo "needed=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Stamp existing database if needed
-        if: steps.check.outputs.needed == 'true'
-        env:
-          DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
-          SECRET_KEY: "migration-only-not-used"
-        run: |
-          # If alembic_version is empty but tables already exist, stamp to head
-          # This handles the migration consolidation (old revisions replaced by 001_consolidated)
-          CURRENT=$(alembic current 2>/dev/null | head -1 | awk '{print $1}')
-          if [ -z "$CURRENT" ]; then
-            # Check if core tables exist (tenants is always present in an initialized DB)
-            TABLE_EXISTS=$(python3 -c "
+          # Query the DB directly to avoid Alembic crashing on stale revisions
+          RESULT=$(python3 -c "
           import os, sqlalchemy
           url = os.environ['DATABASE_URL']
           if url.startswith('postgresql://'):
               url = url.replace('postgresql://', 'postgresql+psycopg://', 1)
+          elif url.startswith('postgresql+psycopg2://'):
+              url = url.replace('postgresql+psycopg2://', 'postgresql+psycopg://', 1)
           engine = sqlalchemy.create_engine(url)
           insp = sqlalchemy.inspect(engine)
-          print('yes' if 'tenants' in insp.get_table_names() else 'no')
+          tables = insp.get_table_names()
+          has_tables = 'tenants' in tables
+          has_version_table = 'alembic_version' in tables
+          current_rev = None
+          if has_version_table:
+              with engine.connect() as conn:
+                  row = conn.execute(sqlalchemy.text('SELECT version_num FROM alembic_version LIMIT 1')).fetchone()
+                  if row:
+                      current_rev = row[0]
           engine.dispose()
-          " 2>/dev/null || echo "no")
+          print(f'{has_tables}|{current_rev or \"\"}')" 2>&1)
 
-            if [ "$TABLE_EXISTS" = "yes" ]; then
-              echo "📌 Existing database detected without alembic version — stamping to head"
-              alembic stamp head
-              echo "✅ Database stamped to head (001_consolidated)"
-              echo "needed=false" >> $GITHUB_OUTPUT
-            fi
+          HAS_TABLES=$(echo "$RESULT" | cut -d'|' -f1)
+          DB_REVISION=$(echo "$RESULT" | cut -d'|' -f2)
+          HEAD=$(alembic heads 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
+
+          echo "Database has tables: $HAS_TABLES"
+          echo "Database revision:   ${DB_REVISION:-<empty>}"
+          echo "Head revision:       $HEAD"
+
+          if [ "$DB_REVISION" = "$HEAD" ]; then
+            echo "✅ Database is up to date — no migrations needed"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ] && [ "$DB_REVISION" != "$HEAD" ]; then
+            echo "📌 Stale revision '$DB_REVISION' found — stamping to consolidated head"
+            python3 -c "
+          import os, sqlalchemy
+          url = os.environ['DATABASE_URL']
+          if url.startswith('postgresql://'):
+              url = url.replace('postgresql://', 'postgresql+psycopg://', 1)
+          elif url.startswith('postgresql+psycopg2://'):
+              url = url.replace('postgresql+psycopg2://', 'postgresql+psycopg://', 1)
+          engine = sqlalchemy.create_engine(url)
+          with engine.begin() as conn:
+              conn.execute(sqlalchemy.text('DELETE FROM alembic_version'))
+              conn.execute(sqlalchemy.text(\"INSERT INTO alembic_version (version_num) VALUES ('001_consolidated')\"))
+          engine.dispose()
+          print('Done')"
+            echo "✅ Database stamped to 001_consolidated"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          elif [ "$HAS_TABLES" = "True" ] && [ -z "$DB_REVISION" ]; then
+            echo "📌 Existing database without version tracking — stamping to head"
+            alembic stamp head
+            echo "✅ Database stamped to head"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Fresh database — migrations needed"
+            echo "needed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Run alembic upgrade head
