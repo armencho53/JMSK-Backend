@@ -320,6 +320,7 @@ jobs:
         id: check
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+          SECRET_KEY: "migration-only-not-used"
         run: |
           echo "🔍 Checking if database needs migrations..."
 
@@ -350,6 +351,7 @@ jobs:
         if: steps.check.outputs.needed == 'true'
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
+          SECRET_KEY: "migration-only-not-used"
         run: |
           echo "🚀 Applying migrations..."
           if alembic upgrade head; then
