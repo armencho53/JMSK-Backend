@@ -190,10 +190,23 @@ class SupplyTrackingService:
         if not order:
             raise ResourceNotFoundError("Order", order_id)
 
-        # Skip if order missing metal_type or target_weight_per_piece
-        if not order.metal_type or not order.target_weight_per_piece:
+        # Validate order has a metal assigned
+        if not order.metal_id:
+            raise ValidationError(
+                f"Order {order_id} has no metal assigned"
+            )
+
+        # Validate the referenced metal is active
+        metal = order.metal
+        if not metal or not metal.is_active:
+            raise ValidationError(
+                f"Metal with id {order.metal_id} is inactive"
+            )
+
+        # Skip if order missing target_weight_per_piece
+        if not order.target_weight_per_piece:
             logger.warning(
-                "Order %d missing metal_type or target_weight_per_piece, skipping casting consumption",
+                "Order %d missing target_weight_per_piece, skipping casting consumption",
                 order_id,
             )
             return None
@@ -201,17 +214,6 @@ class SupplyTrackingService:
         if not order.quantity or order.quantity <= 0:
             logger.warning("Order %d has zero quantity, skipping casting consumption", order_id)
             return None
-
-        # Look up metal by code
-        metal = self.metal_repo.get_by_code(order.metal_type, tenant_id)
-        if not metal:
-            raise ValidationError(
-                f"Metal type '{order.metal_type}' does not match any active Metal record"
-            )
-        if not metal.is_active:
-            raise ValidationError(
-                f"Metal type '{order.metal_type}' is inactive"
-            )
 
         # Calculate consumption
         total_weight = order.quantity * order.target_weight_per_piece

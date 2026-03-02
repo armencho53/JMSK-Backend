@@ -27,7 +27,7 @@ class Order(Base):
         price: Order price
         status: Current order status (PENDING, IN_PROGRESS, COMPLETED, SHIPPED, CANCELLED)
         due_date: Expected completion date
-        metal_type: Type of metal used (gold, silver, platinum, etc.)
+        metal_id: Foreign key to metals table (nullable for orders without metal)
         target_weight_per_piece: Expected final weight per piece in grams
         initial_total_weight: Total raw material weight in grams
         created_at: Timestamp when order was created
@@ -61,7 +61,7 @@ class Order(Base):
     due_date = Column(DateTime)
 
     # Metal and weight tracking
-    metal_type = Column(String(50))
+    metal_id = Column(Integer, ForeignKey("metals.id"), nullable=True)
     target_weight_per_piece = Column(Float)  # Expected final weight per piece in grams
     initial_total_weight = Column(Float)  # Total raw material weight in grams
     labor_cost = Column(Float, nullable=True)  # Manual labor cost entry
@@ -74,3 +74,4 @@ class Order(Base):
     contact = relationship("Contact", back_populates="orders", foreign_keys="[Order.contact_id]")
     company = relationship("Company", back_populates="orders", foreign_keys="[Order.company_id]")
     shipments = relationship("Shipment", back_populates="order")
+    metal = relationship("Metal")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.data.database import Base
@@ -6,13 +6,13 @@ from app.data.database import Base
 class DepartmentBalance(Base):
     __tablename__ = "department_balances"
     __table_args__ = (
-        UniqueConstraint('department_id', 'metal_type', name='uq_department_metal_type'),
+        UniqueConstraint('department_id', 'metal_id', name='uq_department_metal_id'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
-    metal_type = Column(String(50), nullable=False)
+    metal_id = Column(Integer, ForeignKey("metals.id"), nullable=False)
     balance_grams = Column(Float, default=0.0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -20,3 +20,4 @@ class DepartmentBalance(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="department_balances")
     department = relationship("Department", back_populates="balances")
+    metal = relationship("Metal")

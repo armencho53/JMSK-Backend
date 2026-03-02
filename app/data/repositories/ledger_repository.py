@@ -43,8 +43,11 @@ class LedgerRepository(BaseRepository[DepartmentLedgerEntry]):
         tenant_id: int,
         department_id: Optional[int] = None,
     ) -> List[dict]:
+        from app.data.models.metal import Metal
+
         query = self.db.query(
-            DepartmentLedgerEntry.metal_type,
+            DepartmentLedgerEntry.metal_id,
+            Metal.name.label("metal_name"),
             func.sum(
                 case(
                     (DepartmentLedgerEntry.direction == "IN", DepartmentLedgerEntry.quantity),
@@ -58,16 +61,19 @@ class LedgerRepository(BaseRepository[DepartmentLedgerEntry]):
                 )
             ).label("total_qty_out"),
             func.sum(DepartmentLedgerEntry.fine_weight).label("fine_weight_balance"),
+        ).join(
+            Metal, DepartmentLedgerEntry.metal_id == Metal.id
         ).filter(
             DepartmentLedgerEntry.tenant_id == tenant_id
         )
         if department_id is not None:
             query = query.filter(DepartmentLedgerEntry.department_id == department_id)
-        query = query.group_by(DepartmentLedgerEntry.metal_type)
+        query = query.group_by(DepartmentLedgerEntry.metal_id, Metal.name)
         rows = query.all()
         return [
             {
-                "metal_type": row.metal_type,
+                "metal_id": row.metal_id,
+                "metal_name": row.metal_name,
                 "total_qty_in": row.total_qty_in or 0,
                 "total_qty_out": row.total_qty_out or 0,
                 "fine_weight_balance": row.fine_weight_balance or 0,
@@ -78,13 +84,13 @@ class LedgerRepository(BaseRepository[DepartmentLedgerEntry]):
     def get_department_balance(
         self,
         department_id: int,
-        metal_type: str,
+        metal_id: int,
     ) -> Optional[DepartmentBalance]:
         return (
             self.db.query(DepartmentBalance)
             .filter(
                 DepartmentBalance.department_id == department_id,
-                DepartmentBalance.metal_type == metal_type,
+                DepartmentBalance.metal_id == metal_id,
             )
             .first()
         )
@@ -93,15 +99,15 @@ class LedgerRepository(BaseRepository[DepartmentLedgerEntry]):
         self,
         tenant_id: int,
         department_id: int,
-        metal_type: str,
+        metal_id: int,
         weight_delta: float,
     ) -> DepartmentBalance:
-        balance = self.get_department_balance(department_id, metal_type)
+        balance = self.get_department_balance(department_id, metal_id)
         if balance is None:
             balance = DepartmentBalance(
                 tenant_id=tenant_id,
                 department_id=department_id,
-                metal_type=metal_type,
+                metal_id=metal_id,
                 balance_grams=weight_delta,
             )
             self.db.add(balance)
