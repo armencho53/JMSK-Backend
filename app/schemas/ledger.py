@@ -17,15 +17,15 @@ class LedgerEntryCreate(BaseModel):
     @field_validator("quantity")
     @classmethod
     def validate_quantity(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("Quantity must be non-negative")
+        if v <= 0:
+            raise ValueError("Quantity must be positive")
         return v
 
     @field_validator("weight")
     @classmethod
     def validate_weight(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("Weight must be non-negative")
+        if v <= 0:
+            raise ValueError("Weight must be positive")
         return v
 
 
@@ -42,15 +42,15 @@ class LedgerEntryUpdate(BaseModel):
     @field_validator("quantity")
     @classmethod
     def validate_quantity(cls, v: Optional[float]) -> Optional[float]:
-        if v is not None and v < 0:
-            raise ValueError("Quantity must be non-negative")
+        if v is not None and v <= 0:
+            raise ValueError("Quantity must be positive")
         return v
 
     @field_validator("weight")
     @classmethod
     def validate_weight(cls, v: Optional[float]) -> Optional[float]:
-        if v is not None and v < 0:
-            raise ValueError("Weight must be non-negative")
+        if v is not None and v <= 0:
+            raise ValueError("Weight must be positive")
         return v
 
 
