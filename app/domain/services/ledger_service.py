@@ -15,6 +15,9 @@ from app.schemas.ledger import (
     LedgerSummaryResponse,
     MetalBalanceItem,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LedgerService:
@@ -41,7 +44,14 @@ class LedgerService:
         self.repository.upsert_department_balance(tenant_id, department_id, metal_id, weight_delta)
 
     def create_entry(self, data: LedgerEntryCreate, tenant_id: int, user_id: int) -> LedgerEntryResponse:
-        """Create a new ledger entry, compute fine weight, and update department balance."""
+        """
+        Create a new ledger entry, compute fine weight, and update department balance.
+        
+        If this is a casting department entry with direction IN, automatically
+        deduct pure metal from the company's metal balance.
+        
+        Requirements: 6.1, 6.2, 6.3
+        """
         fine_weight = self._compute_fine_weight(data.metal_id, data.weight, data.direction, tenant_id)
 
         entry = DepartmentLedgerEntry(
@@ -63,12 +73,38 @@ class LedgerService:
         weight_delta = data.weight if data.direction == "IN" else -data.weight
         self._update_balance(tenant_id, data.department_id, data.metal_id, weight_delta)
 
+        # Process casting consumption if applicable
+        # Import here to avoid circular dependency
+        from app.domain.services.supply_tracking_service import SupplyTrackingService
+        supply_service = SupplyTrackingService(self.db)
+        
+        try:
+            supply_service.process_casting_ledger_entry(
+                ledger_entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to process casting consumption for ledger entry %d: %s",
+                entry.id if entry.id else 0,
+                str(e)
+            )
+            # Don't block ledger entry creation if casting consumption fails
+
         self.db.commit()
         self.db.refresh(entry)
         return LedgerEntryResponse.model_validate(entry)
 
     def update_entry(self, entry_id: int, data: LedgerEntryUpdate, tenant_id: int) -> LedgerEntryResponse:
-        """Update a ledger entry: reverse old balance, apply updates, recompute fine weight, apply new balance."""
+        """
+        Update a ledger entry: reverse old balance, apply updates, recompute fine weight, apply new balance.
+        
+        If this is a casting department entry, handle consumption changes by reversing
+        the old deduction and applying the new deduction.
+        
+        Requirements: 6.6
+        """
         entry = self.repository.get_by_id(entry_id, tenant_id)
         if not entry:
             raise ResourceNotFoundError("LedgerEntry", entry_id)
@@ -83,6 +119,22 @@ class LedgerService:
         old_delta = old_weight if old_direction == "IN" else -old_weight
         self._update_balance(tenant_id, old_department_id, old_metal_id, -old_delta)
 
+        # Reverse old casting consumption if applicable
+        from app.domain.services.supply_tracking_service import SupplyTrackingService
+        supply_service = SupplyTrackingService(self.db)
+        
+        try:
+            supply_service.reverse_casting_ledger_entry(
+                ledger_entry=entry,
+                tenant_id=tenant_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to reverse casting consumption for ledger entry %d: %s",
+                entry_id,
+                str(e)
+            )
+
         # Apply updates
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
@@ -95,12 +147,35 @@ class LedgerService:
         new_delta = entry.weight if entry.direction == "IN" else -entry.weight
         self._update_balance(tenant_id, entry.department_id, entry.metal_id, new_delta)
 
+        # Apply new casting consumption if applicable
+        try:
+            # Get user_id from entry's created_by field
+            user_id = entry.created_by
+            supply_service.process_casting_ledger_entry(
+                ledger_entry=entry,
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to process casting consumption for updated ledger entry %d: %s",
+                entry_id,
+                str(e)
+            )
+
         self.db.commit()
         self.db.refresh(entry)
         return LedgerEntryResponse.model_validate(entry)
 
     def delete_entry(self, entry_id: int, tenant_id: int) -> None:
-        """Delete a ledger entry and reverse its balance impact."""
+        """
+        Delete a ledger entry and reverse its balance impact.
+        
+        If this is a casting department entry, reverse the pure metal deduction
+        from the company's metal balance.
+        
+        Requirements: 6.5
+        """
         entry = self.repository.get_by_id(entry_id, tenant_id)
         if not entry:
             raise ResourceNotFoundError("LedgerEntry", entry_id)
@@ -108,6 +183,22 @@ class LedgerService:
         # Reverse balance impact
         delta = entry.weight if entry.direction == "IN" else -entry.weight
         self._update_balance(tenant_id, entry.department_id, entry.metal_id, -delta)
+
+        # Reverse casting consumption if applicable
+        from app.domain.services.supply_tracking_service import SupplyTrackingService
+        supply_service = SupplyTrackingService(self.db)
+        
+        try:
+            supply_service.reverse_casting_ledger_entry(
+                ledger_entry=entry,
+                tenant_id=tenant_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to reverse casting consumption for deleted ledger entry %d: %s",
+                entry_id,
+                str(e)
+            )
 
         self.db.delete(entry)
         self.db.commit()

@@ -124,6 +124,47 @@ def upgrade() -> None:
         if not _index_exists(conn, 'ix_contacts_tenant_company'):
             op.create_index('ix_contacts_tenant_company', 'contacts', ['tenant_id', 'company_id'])
 
+    # ── Fix: convert enum columns to String(50) ──
+    # (must run before metals/orders fixes that reference these tables)
+    if dialect == 'postgresql':
+        insp = sa.inspect(conn)
+
+        def col_is_enum(table, column):
+            if not _table_exists(conn, table):
+                return False
+            cols = {c['name']: c for c in insp.get_columns(table)}
+            if column not in cols:
+                return False
+            return not isinstance(cols[column]['type'], sa.String)
+
+        if _table_exists(conn, 'supplies') and col_is_enum('supplies', 'type'):
+            op.execute("ALTER TABLE supplies ALTER COLUMN type TYPE VARCHAR(50) USING type::text")
+
+        # Drop old enum types if they exist
+        op.execute("DROP TYPE IF EXISTS metaltype")
+        op.execute("DROP TYPE IF EXISTS steptype")
+        op.execute("DROP TYPE IF EXISTS supplytype")
+
+    # ── Fix: metals table ──
+    # (must exist before orders fixes that add metal_id FK)
+    if not _table_exists(conn, 'metals'):
+        op.create_table('metals',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('tenant_id', sa.Integer(), nullable=False),
+            sa.Column('code', sa.String(50), nullable=False),
+            sa.Column('name', sa.String(), nullable=False),
+            sa.Column('fine_percentage', sa.Float(), nullable=False),
+            sa.Column('average_cost_per_gram', sa.Float(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
+            sa.Column('updated_at', sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id']),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('tenant_id', 'code', name='uq_metal_code_per_tenant'),
+        )
+        op.create_index('ix_metals_id', 'metals', ['id'])
+        op.create_index('ix_metals_tenant_id', 'metals', ['tenant_id'])
+
     # ── Fix: orders table columns ──
     if _table_exists(conn, 'orders'):
         # Rename customer_id -> contact_id if needed
@@ -200,45 +241,6 @@ def upgrade() -> None:
         op.create_index('ix_lookup_values_id', 'lookup_values', ['id'])
         op.create_index('ix_lookup_values_tenant_id', 'lookup_values', ['tenant_id'])
         op.create_index('ix_lookup_values_category', 'lookup_values', ['category'])
-
-    # ── Fix: convert enum columns to String(50) ──
-    if dialect == 'postgresql':
-        insp = sa.inspect(conn)
-
-        def col_is_enum(table, column):
-            if not _table_exists(conn, table):
-                return False
-            cols = {c['name']: c for c in insp.get_columns(table)}
-            if column not in cols:
-                return False
-            return not isinstance(cols[column]['type'], sa.String)
-
-        if _table_exists(conn, 'supplies') and col_is_enum('supplies', 'type'):
-            op.execute("ALTER TABLE supplies ALTER COLUMN type TYPE VARCHAR(50) USING type::text")
-
-        # Drop old enum types if they exist
-        op.execute("DROP TYPE IF EXISTS metaltype")
-        op.execute("DROP TYPE IF EXISTS steptype")
-        op.execute("DROP TYPE IF EXISTS supplytype")
-
-    # ── Fix: metals table ──
-    if not _table_exists(conn, 'metals'):
-        op.create_table('metals',
-            sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('tenant_id', sa.Integer(), nullable=False),
-            sa.Column('code', sa.String(50), nullable=False),
-            sa.Column('name', sa.String(), nullable=False),
-            sa.Column('fine_percentage', sa.Float(), nullable=False),
-            sa.Column('average_cost_per_gram', sa.Float(), nullable=True),
-            sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
-            sa.Column('created_at', sa.DateTime(), nullable=True),
-            sa.Column('updated_at', sa.DateTime(), nullable=True),
-            sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id']),
-            sa.PrimaryKeyConstraint('id'),
-            sa.UniqueConstraint('tenant_id', 'code', name='uq_metal_code_per_tenant'),
-        )
-        op.create_index('ix_metals_id', 'metals', ['id'])
-        op.create_index('ix_metals_tenant_id', 'metals', ['tenant_id'])
 
     # ── Fix: safe_supplies table ──
     if not _table_exists(conn, 'safe_supplies'):

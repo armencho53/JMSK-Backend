@@ -8,6 +8,8 @@ from app.presentation.api.v1.controllers import (
     metal_controller,
     supply_tracking_controller,
     ledger_controller,
+    order_controller,
+    metal_price_controller,
 )
 
 # Legacy endpoints (to be refactored to clean architecture)
@@ -65,6 +67,18 @@ api_router.include_router(
     ledger_controller.router,
     prefix="/department-ledger",
     tags=["department-ledger"]
+)
+
+api_router.include_router(
+    order_controller.router,
+    prefix="/orders-v2",  # Use different prefix to avoid conflict with legacy
+    tags=["orders-v2"]
+)
+
+api_router.include_router(
+    metal_price_controller.router,
+    prefix="/metals",
+    tags=["metals"]
 )
 
 # Legacy endpoints

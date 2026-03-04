@@ -68,3 +68,15 @@ class MetalResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MetalPriceResponse(BaseModel):
+    """Response schema for metal price API responses"""
+    metal_code: str = Field(..., description="Metal code identifier (e.g., 'GOLD_24K')")
+    price_per_gram: float = Field(..., description="Current price per gram")
+    currency: str = Field(default="USD", description="Currency code")
+    fetched_at: datetime = Field(..., description="Timestamp when price was fetched")
+    cached: bool = Field(..., description="Whether price is from cache")
+
+    class Config:
+        from_attributes = True

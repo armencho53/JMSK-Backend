@@ -10,6 +10,7 @@ from app.data.models.contact import Contact
 from app.data.models.address import Address
 from app.data.models.order import Order
 from app.domain.enums import OrderStatus
+from app.data.models.order_line_item import OrderLineItem
 from app.data.models.shipment import Shipment
 from app.data.models.department import Department
 from app.data.models.department_balance import DepartmentBalance
@@ -19,6 +20,7 @@ from app.data.models.safe_supply import SafeSupply
 from app.data.models.metal_transaction import MetalTransaction
 from app.data.models.company_metal_balance import CompanyMetalBalance
 from app.data.models.department_ledger_entry import DepartmentLedgerEntry
+from app.data.models.metal_price import MetalPrice
 
 __all__ = [
     "Tenant",
@@ -33,6 +35,7 @@ __all__ = [
     "Address",
     "Order",
     "OrderStatus",
+    "OrderLineItem",
     "Shipment",
     "Department",
     "DepartmentBalance",
@@ -42,4 +45,5 @@ __all__ = [
     "MetalTransaction",
     "CompanyMetalBalance",
     "DepartmentLedgerEntry",
+    "MetalPrice",
 ]

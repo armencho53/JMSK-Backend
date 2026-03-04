@@ -112,11 +112,32 @@ def get_company_balances(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    """
+    Get company metal balances with automatic safe supply recalculation.
+    
+    This endpoint retrieves all metal balances for a company and triggers
+    recalculation of safe supply balances to ensure accuracy.
+    
+    Requirements: 7.1, 7.2
+    """
     try:
         service = SupplyTrackingService(db)
-        return service.get_company_balances(
+        balances = service.get_company_balances(
             tenant_id=current_user.tenant_id,
             company_id=company_id,
         )
+        
+        # Trigger recalculation for each metal type found
+        # This ensures safe supply balances are accurate
+        metal_ids_seen = set()
+        for balance in balances:
+            if balance.metal_id not in metal_ids_seen:
+                service.recalculate_safe_supply_balance(
+                    metal_id=balance.metal_id,
+                    tenant_id=current_user.tenant_id,
+                )
+                metal_ids_seen.add(balance.metal_id)
+        
+        return balances
     except DomainException as e:
         handle_domain_exception(e)

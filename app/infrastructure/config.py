@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
     
+    # Metal price API settings
+    METAL_PRICE_API_URL: str = "https://api.metalpriceapi.com/v1"
+    METAL_PRICE_API_KEY: str = ""
+    METAL_PRICE_CACHE_TTL_MINUTES: int = 15  # Cache prices for 15 minutes
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
