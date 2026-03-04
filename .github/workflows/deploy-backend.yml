@@ -444,8 +444,8 @@ jobs:
         run: |
           echo "🧪 Running integration tests against $DEPLOY_ENV database..."
           
-          # Run only integration tests (not unit tests which use SQLite)
-          if python -m pytest tests/integration/ -v --tb=short 2>&1 | tee test_output.log; then
+          # Run only integration tests (marked with @pytest.mark.integration)
+          if python -m pytest -m integration -v --tb=short 2>&1 | tee test_output.log; then
             echo "✅ All integration tests passed against real database"
           else
             echo "⚠️ Some integration tests failed - check output above"

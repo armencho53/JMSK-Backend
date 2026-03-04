@@ -3,6 +3,8 @@ Pytest configuration for integration tests.
 
 Integration tests use the actual DATABASE_URL from environment variables
 to test against real PostgreSQL databases (dev/prod).
+
+These tests are SKIPPED locally unless DATABASE_URL points to PostgreSQL.
 """
 
 import pytest
@@ -16,16 +18,28 @@ from app.data.database import get_db, Base
 from app.infrastructure.config import settings
 
 
+def is_postgresql_url(url):
+    """Check if the database URL is PostgreSQL."""
+    if not url:
+        return False
+    return url.startswith("postgresql://") or url.startswith("postgresql+psycopg")
+
+
 @pytest.fixture(scope="session")
 def integration_db_engine():
     """
     Create a database engine for integration tests.
     Uses the actual DATABASE_URL from environment.
+    
+    SKIPS if DATABASE_URL is not set or not PostgreSQL.
     """
     database_url = os.getenv("DATABASE_URL")
     
     if not database_url:
         pytest.skip("DATABASE_URL not set - skipping integration tests")
+    
+    if not is_postgresql_url(database_url):
+        pytest.skip("DATABASE_URL is not PostgreSQL - integration tests require PostgreSQL")
     
     # Handle PostgreSQL URL format
     if database_url.startswith("postgresql://"):

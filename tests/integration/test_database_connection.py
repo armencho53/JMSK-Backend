@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import text
 
 
+@pytest.mark.integration
 def test_database_connection(integration_db_session):
     """Test that we can connect to the database and execute queries."""
     result = integration_db_session.execute(text("SELECT 1 as value"))
@@ -15,6 +16,7 @@ def test_database_connection(integration_db_session):
     assert row.value == 1
 
 
+@pytest.mark.integration
 def test_database_has_required_tables(integration_db_session):
     """Test that all required tables exist in the database."""
     # Query to get all table names
@@ -45,6 +47,7 @@ def test_database_has_required_tables(integration_db_session):
         assert table in tables, f"Required table '{table}' not found in database"
 
 
+@pytest.mark.integration
 def test_alembic_version_exists(integration_db_session):
     """Test that the database has migration version tracking."""
     result = integration_db_session.execute(text("""
@@ -60,6 +63,7 @@ def test_alembic_version_exists(integration_db_session):
     print(f"Database is at migration version: {row.version_num}")
 
 
+@pytest.mark.integration
 def test_tenant_isolation_setup(integration_db_session):
     """Test that tenant_id columns exist on multi-tenant tables."""
     # Check that key tables have tenant_id column

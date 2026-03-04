@@ -227,6 +227,10 @@ def test_migration_is_idempotent(test_session, sample_data, test_database_url):
     assert line_items_created_1 == 2
     assert orders_skipped_1 == 0
     
+    # Refresh the test session to see changes from migration script
+    test_session.expire_all()
+    test_session.commit()
+    
     # Run migration second time
     orders_processed_2, line_items_created_2, orders_skipped_2 = migrate_orders_to_line_items(
         database_url=test_database_url,
@@ -238,7 +242,9 @@ def test_migration_is_idempotent(test_session, sample_data, test_database_url):
     assert line_items_created_2 == 0, "Should create 0 line items on second run"
     assert orders_skipped_2 == 2, "Should skip 2 orders that are already migrated"
     
-    # Verify still only 2 line items (no duplicates)
+    # Refresh session again and verify still only 2 line items (no duplicates)
+    test_session.expire_all()
+    test_session.commit()
     result = test_session.execute(text("SELECT COUNT(*) FROM order_line_items"))
     count = result.scalar()
     assert count == 2, "Should still have only 2 line items (no duplicates)"
