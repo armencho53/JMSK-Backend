@@ -1,5 +1,5 @@
 """Ledger schemas for API request/response validation"""
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Literal
 from datetime import date, datetime
 
@@ -70,6 +70,7 @@ class LedgerEntryResponse(BaseModel):
     weight_in: Optional[float] = None
     weight_out: Optional[float] = None
     fine_weight: float
+    pure_weight: float = Field(alias="fine_weight")
     notes: Optional[str] = None
     is_archived: bool
     created_by: int
@@ -78,6 +79,7 @@ class LedgerEntryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow both pure_weight and fine_weight
 
     @model_validator(mode="before")
     @classmethod

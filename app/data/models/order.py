@@ -75,3 +75,4 @@ class Order(Base):
     company = relationship("Company", back_populates="orders", foreign_keys="[Order.company_id]")
     shipments = relationship("Shipment", back_populates="order")
     metal = relationship("Metal")
+    line_items = relationship("OrderLineItem", back_populates="order", cascade="all, delete-orphan")
