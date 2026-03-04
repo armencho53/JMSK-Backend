@@ -239,6 +239,7 @@ def test_migration_is_idempotent(test_session, sample_data, test_database_url):
     
     # On second run, the main query filters out orders with line items using HAVING clause
     # So no orders are returned to process, and none are skipped in the loop
+    # The query itself prevents already-migrated orders from being selected
     assert orders_processed_2 == 0, "Second run should process 0 orders (filtered by HAVING clause)"
     assert line_items_created_2 == 0, "Second run should create 0 line items"
     assert orders_skipped_2 == 0, "Second run should skip 0 orders (already filtered out by query)"
