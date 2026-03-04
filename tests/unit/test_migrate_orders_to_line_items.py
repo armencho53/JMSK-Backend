@@ -223,9 +223,9 @@ def test_migration_is_idempotent(test_session, sample_data, test_database_url):
         dry_run=False
     )
     
-    assert orders_processed_1 == 2
-    assert line_items_created_1 == 2
-    assert orders_skipped_1 == 0
+    assert orders_processed_1 == 2, "First run should process 2 orders"
+    assert line_items_created_1 == 2, "First run should create 2 line items"
+    assert orders_skipped_1 == 0, "First run should skip 0 orders"
     
     # Refresh the test session to see changes from migration script
     test_session.expire_all()
@@ -237,17 +237,18 @@ def test_migration_is_idempotent(test_session, sample_data, test_database_url):
         dry_run=False
     )
     
-    # Should skip all orders since they're already migrated
-    assert orders_processed_2 == 0, "Should process 0 orders on second run"
-    assert line_items_created_2 == 0, "Should create 0 line items on second run"
-    assert orders_skipped_2 == 2, "Should skip 2 orders that are already migrated"
+    # On second run, the main query filters out orders with line items using HAVING clause
+    # So no orders are returned to process, and none are skipped in the loop
+    assert orders_processed_2 == 0, "Second run should process 0 orders (filtered by HAVING clause)"
+    assert line_items_created_2 == 0, "Second run should create 0 line items"
+    assert orders_skipped_2 == 0, "Second run should skip 0 orders (already filtered out by query)"
     
     # Refresh session again and verify still only 2 line items (no duplicates)
     test_session.expire_all()
     test_session.commit()
     result = test_session.execute(text("SELECT COUNT(*) FROM order_line_items"))
     count = result.scalar()
-    assert count == 2, "Should still have only 2 line items (no duplicates)"
+    assert count == 2, "Should still have only 2 line items (no duplicates created)"
 
 
 def test_migration_dry_run(test_session, sample_data, test_database_url):
