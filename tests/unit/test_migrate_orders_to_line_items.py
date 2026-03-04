@@ -8,6 +8,8 @@ Requirements: 3.6, 3.7
 """
 
 import pytest
+import tempfile
+import os
 from datetime import datetime
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -21,17 +23,24 @@ from app.data.models.order import Order
 from app.domain.enums import OrderStatus
 
 
-# Use in-memory SQLite for testing
-TEST_DATABASE_URL = "sqlite:///:memory:"
+@pytest.fixture
+def test_db_file():
+    """Create a temporary database file for testing."""
+    fd, path = tempfile.mkstemp(suffix='.db')
+    os.close(fd)
+    yield path
+    # Cleanup
+    if os.path.exists(path):
+        os.unlink(path)
 
 
 @pytest.fixture
-def test_engine():
-    """Create a test database engine."""
+def test_engine(test_db_file):
+    """Create a test database engine using a temporary file."""
+    database_url = f"sqlite:///{test_db_file}"
     engine = create_engine(
-        TEST_DATABASE_URL,
+        database_url,
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     yield engine
@@ -46,6 +55,12 @@ def test_session(test_engine):
     session = SessionLocal()
     yield session
     session.close()
+
+
+@pytest.fixture
+def test_database_url(test_db_file):
+    """Provide the test database URL."""
+    return f"sqlite:///{test_db_file}"
 
 
 @pytest.fixture
@@ -150,7 +165,7 @@ def sample_data(test_session):
     }
 
 
-def test_migration_creates_line_items(test_session, sample_data):
+def test_migration_creates_line_items(test_session, sample_data, test_database_url):
     """Test that migration creates line items for orders with product descriptions."""
     # Import migration function
     import sys
@@ -160,7 +175,7 @@ def test_migration_creates_line_items(test_session, sample_data):
     
     # Run migration
     orders_processed, line_items_created, orders_skipped = migrate_orders_to_line_items(
-        database_url=TEST_DATABASE_URL,
+        database_url=test_database_url,
         dry_run=False
     )
     
@@ -195,7 +210,7 @@ def test_migration_creates_line_items(test_session, sample_data):
     assert line_item.labor_cost == 100.00
 
 
-def test_migration_is_idempotent(test_session, sample_data):
+def test_migration_is_idempotent(test_session, sample_data, test_database_url):
     """Test that running migration multiple times doesn't create duplicates."""
     import sys
     import os
@@ -204,7 +219,7 @@ def test_migration_is_idempotent(test_session, sample_data):
     
     # Run migration first time
     orders_processed_1, line_items_created_1, orders_skipped_1 = migrate_orders_to_line_items(
-        database_url=TEST_DATABASE_URL,
+        database_url=test_database_url,
         dry_run=False
     )
     
@@ -214,7 +229,7 @@ def test_migration_is_idempotent(test_session, sample_data):
     
     # Run migration second time
     orders_processed_2, line_items_created_2, orders_skipped_2 = migrate_orders_to_line_items(
-        database_url=TEST_DATABASE_URL,
+        database_url=test_database_url,
         dry_run=False
     )
     
@@ -229,7 +244,7 @@ def test_migration_is_idempotent(test_session, sample_data):
     assert count == 2, "Should still have only 2 line items (no duplicates)"
 
 
-def test_migration_dry_run(test_session, sample_data):
+def test_migration_dry_run(test_session, sample_data, test_database_url):
     """Test that dry run mode doesn't make any changes."""
     import sys
     import os
@@ -238,7 +253,7 @@ def test_migration_dry_run(test_session, sample_data):
     
     # Run migration in dry-run mode
     orders_processed, line_items_created, orders_skipped = migrate_orders_to_line_items(
-        database_url=TEST_DATABASE_URL,
+        database_url=test_database_url,
         dry_run=True
     )
     
@@ -252,7 +267,7 @@ def test_migration_dry_run(test_session, sample_data):
     assert count == 0, "Should have 0 line items after dry run"
 
 
-def test_migration_skips_orders_without_description(test_session, sample_data):
+def test_migration_skips_orders_without_description(test_session, sample_data, test_database_url):
     """Test that orders without product_description are not migrated."""
     import sys
     import os
@@ -260,7 +275,7 @@ def test_migration_skips_orders_without_description(test_session, sample_data):
     from scripts.migrate_orders_to_line_items import migrate_orders_to_line_items
     
     # Run migration
-    migrate_orders_to_line_items(database_url=TEST_DATABASE_URL, dry_run=False)
+    migrate_orders_to_line_items(database_url=test_database_url, dry_run=False)
     
     # Verify orders 3 and 4 (without descriptions) have no line items
     result = test_session.execute(
@@ -270,7 +285,7 @@ def test_migration_skips_orders_without_description(test_session, sample_data):
     assert count == 0, "Orders without product_description should not have line items"
 
 
-def test_migration_preserves_all_fields(test_session, sample_data):
+def test_migration_preserves_all_fields(test_session, sample_data, test_database_url):
     """Test that all order fields are correctly copied to line items."""
     import sys
     import os
@@ -278,7 +293,7 @@ def test_migration_preserves_all_fields(test_session, sample_data):
     from scripts.migrate_orders_to_line_items import migrate_orders_to_line_items
     
     # Run migration
-    migrate_orders_to_line_items(database_url=TEST_DATABASE_URL, dry_run=False)
+    migrate_orders_to_line_items(database_url=test_database_url, dry_run=False)
     
     # Get original order data
     order = test_session.query(Order).filter(Order.id == 2).first()
@@ -308,7 +323,7 @@ def test_migration_preserves_all_fields(test_session, sample_data):
     assert line_item.labor_cost == order.labor_cost
 
 
-def test_migration_handles_null_optional_fields(test_session, sample_data):
+def test_migration_handles_null_optional_fields(test_session, sample_data, test_database_url):
     """Test that migration handles orders with null optional fields."""
     # Create order with minimal data
     order = Order(
@@ -336,7 +351,7 @@ def test_migration_handles_null_optional_fields(test_session, sample_data):
     from scripts.migrate_orders_to_line_items import migrate_orders_to_line_items
     
     # Run migration
-    migrate_orders_to_line_items(database_url=TEST_DATABASE_URL, dry_run=False)
+    migrate_orders_to_line_items(database_url=test_database_url, dry_run=False)
     
     # Verify line item was created with null fields
     result = test_session.execute(
