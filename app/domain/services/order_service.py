@@ -169,49 +169,17 @@ class OrderService:
             List of OrderResponse objects
         """
         try:
-            # Get orders from repository
+            # Get orders from repository (relationships already eager-loaded)
             orders = self.order_repo.get_all(tenant_id=tenant_id, skip=skip, limit=limit)
 
-            # Convert to response format with line items
+            # Convert to response format using the same method as single-order fetch
             order_responses = []
             for order in orders:
-                # Get line items for this order
-                line_items = self.line_item_repo.get_by_order(
-                    order_id=order.id,
-                    tenant_id=tenant_id
-                )
-
-                # Convert line items to response format
-                line_item_responses = [
-                    OrderLineItemResponse(
-                        id=item.id,
-                        order_id=item.order_id,
-                        metal_id=item.metal_id,
-                        metal_name=item.metal.name if item.metal else None,
-                        quantity=item.quantity,
-                        weight=item.weight,
-                        description=item.description,
-                        created_at=item.created_at,
-                        updated_at=item.updated_at
-                    )
-                    for item in line_items
-                ]
-
-                # Build order response
-                order_response = OrderResponse(
-                    id=order.id,
-                    order_number=order.order_number,
-                    contact_id=order.contact_id,
-                    contact_name=order.contact.name if order.contact else None,
-                    company_id=order.company_id,
-                    company_name=order.company.name if order.company else None,
-                    due_date=order.due_date,
-                    status=order.status,
-                    line_items=line_item_responses,
-                    created_at=order.created_at,
-                    updated_at=order.updated_at
-                )
-                order_responses.append(order_response)
+                try:
+                    response = self.get_order_with_line_items(order.id, tenant_id)
+                    order_responses.append(response)
+                except ResourceNotFoundError:
+                    continue  # Skip orders that can't be loaded
 
             return order_responses
 
