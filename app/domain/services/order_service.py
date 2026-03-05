@@ -176,7 +176,7 @@ class OrderService:
             order_responses = []
             for order in orders:
                 # Get line items for this order
-                line_items = self.line_item_repo.get_by_order_id(
+                line_items = self.line_item_repo.get_by_order(
                     order_id=order.id,
                     tenant_id=tenant_id
                 )
