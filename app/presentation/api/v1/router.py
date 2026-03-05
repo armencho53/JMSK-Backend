@@ -71,8 +71,8 @@ api_router.include_router(
 
 api_router.include_router(
     order_controller.router,
-    prefix="/orders-v2",  # Use different prefix to avoid conflict with legacy
-    tags=["orders-v2"]
+    prefix="/orders",
+    tags=["orders"]
 )
 
 api_router.include_router(
@@ -87,6 +87,6 @@ api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
 api_router.include_router(companies.router, prefix="/companies", tags=["companies"])
 api_router.include_router(supplies.router, prefix="/supplies", tags=["supplies"])
-api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
+api_router.include_router(orders.router, prefix="/orders-legacy", tags=["orders-legacy"], deprecated=True)
 api_router.include_router(shipments.router, prefix="/shipments", tags=["shipments"])
 api_router.include_router(departments.router, prefix="/departments", tags=["departments"])

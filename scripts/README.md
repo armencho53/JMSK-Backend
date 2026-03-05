@@ -1,146 +1,114 @@
-# Data Migration Scripts
+# Database Migration Scripts
 
-This directory contains standalone data migration scripts for the JMSK Backend.
+## Quick Start
 
-## Order Line Items Migration
+### Method 1: Using the Migration Script (Recommended)
 
-### Overview
+```bash
+# Run migrations against local database
+./scripts/migrate.sh local upgrade head
 
-The `migrate_orders_to_line_items.py` script migrates existing single-line orders to the new multi-line order system by creating `order_line_items` records.
+# Run migrations against development
+./scripts/migrate.sh dev upgrade head
 
-### Prerequisites
+# Run migrations against staging
+./scripts/migrate.sh staging upgrade head
 
-1. Apply the schema migration first:
+# Run migrations against production (with confirmation prompt)
+./scripts/migrate.sh prod upgrade head
+
+# Create a new migration
+./scripts/migrate.sh local revision --autogenerate -m "add new column"
+
+# Rollback one migration
+./scripts/migrate.sh dev downgrade -1
+
+# View migration history
+./scripts/migrate.sh local history
+```
+
+### Method 2: Using Environment Variables
+
+```bash
+# Set the environment variable directly
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+alembic upgrade head
+
+# Or use inline
+DATABASE_URL="postgresql://user:pass@host:5432/dbname" alembic upgrade head
+```
+
+### Method 3: Edit .env File
+
+1. Open `.env` file
+2. Change the `DATABASE_URL` line to point to your desired environment:
+   ```bash
+   DATABASE_URL=${DATABASE_URL_PROD}  # Switch to production
+   ```
+3. Run alembic normally:
    ```bash
    alembic upgrade head
    ```
 
-2. Ensure the `order_line_items` table exists in your database
+## Environment Configuration
 
-### Usage
-
-#### Dry Run (Recommended First)
-
-Preview what the migration will do without making changes:
+All database URLs are stored in `.env`:
 
 ```bash
-python scripts/migrate_orders_to_line_items.py --dry-run
+DATABASE_URL_LOCAL=postgresql+psycopg://jewelry_user:jewelry_pass@localhost:5432/jewelry_db
+DATABASE_URL_DEV=postgresql://user:pass@dev-host:5432/jewelry_dev
+DATABASE_URL_STAGING=postgresql://user:pass@staging-host:5432/jewelry_staging
+DATABASE_URL_PROD=postgresql://user:pass@production-host:5432/jewelry_production
+
+# Active database (used by default)
+DATABASE_URL=${DATABASE_URL_LOCAL}
 ```
 
-#### Run Migration
-
-Execute the actual migration:
+## Common Alembic Commands
 
 ```bash
-python scripts/migrate_orders_to_line_items.py
+# Upgrade to latest
+alembic upgrade head
+
+# Upgrade to specific revision
+alembic upgrade abc123
+
+# Downgrade one revision
+alembic downgrade -1
+
+# Downgrade to specific revision
+alembic downgrade abc123
+
+# Create new migration (auto-detect changes)
+alembic revision --autogenerate -m "description"
+
+# Create empty migration
+alembic revision -m "description"
+
+# View current revision
+alembic current
+
+# View migration history
+alembic history
+
+# View SQL without executing
+alembic upgrade head --sql
 ```
 
-#### Verify Migration
+## Safety Features
 
-Check migration status without running it:
+- Production migrations require explicit confirmation
+- Database credentials are masked in output
+- Script validates environment exists before running
+- Uses `set -e` to exit on any error
 
-```bash
-python scripts/migrate_orders_to_line_items.py --verify
+## CI/CD Integration
+
+For GitHub Actions or other CI/CD:
+
+```yaml
+- name: Run migrations
+  env:
+    DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+  run: alembic upgrade head
 ```
-
-#### Custom Database URL
-
-Override the default database connection:
-
-```bash
-python scripts/migrate_orders_to_line_items.py --database-url "postgresql://user:pass@host:5432/dbname"
-```
-
-### What It Does
-
-1. **Finds eligible orders**: Selects all orders with `product_description` populated that don't already have line items
-2. **Creates line items**: For each order, creates a corresponding `order_line_items` record with:
-   - `product_description`
-   - `specifications`
-   - `metal_id`
-   - `quantity`
-   - `target_weight_per_piece`
-   - `initial_total_weight`
-   - `price`
-   - `labor_cost`
-   - Timestamps (`created_at`, `updated_at`)
-3. **Preserves data**: All existing order data is copied without modification
-4. **Idempotent**: Can be run multiple times safely - skips orders that already have line items
-
-### Safety Features
-
-- **Idempotent**: Running multiple times won't create duplicate line items
-- **Transaction-based**: All changes are wrapped in a database transaction
-- **Dry-run mode**: Test the migration without making changes
-- **Verification**: Built-in verification to check migration status
-- **Rollback on error**: Automatically rolls back if any error occurs
-
-### Output
-
-The script provides detailed output:
-
-```
-Starting order migration...
-Database: localhost:5432/jmsk_db
---------------------------------------------------------------------------------
-Found 150 orders to migrate
-
-✓ Created line item for order ORD-2024-001 (ID: 1)
-✓ Created line item for order ORD-2024-002 (ID: 2)
-...
-
-================================================================================
-✓ Migration completed successfully!
-
-Summary:
-  Orders processed: 150
-  Line items created: 150
-  Orders skipped (already migrated): 0
-
-Verifying migration...
---------------------------------------------------------------------------------
-Total line items in database: 150
-Orders with line items: 150
-Orders still needing migration: 0
-
-✓ All orders have been successfully migrated!
-```
-
-### Troubleshooting
-
-**Error: "No module named 'app'"**
-- Make sure you're running from the JMSK-Backend directory
-- The script automatically adds the parent directory to the Python path
-
-**Error: "relation 'order_line_items' does not exist"**
-- Run the schema migration first: `alembic upgrade head`
-
-**Orders skipped during migration**
-- This is normal if you've run the migration before
-- The script skips orders that already have line items
-
-**Migration shows 0 orders found**
-- All orders may already be migrated
-- Or no orders have `product_description` populated
-- Run with `--verify` to check current status
-
-### Rollback
-
-If you need to rollback the migration:
-
-```sql
--- Delete all line items (be careful!)
-DELETE FROM order_line_items;
-
--- Or delete for specific orders
-DELETE FROM order_line_items WHERE order_id IN (1, 2, 3);
-```
-
-Then you can re-run the migration script.
-
-### Related Files
-
-- Schema migration: `alembic/versions/003_add_order_line_items_table.py`
-- Order model: `app/data/models/order.py`
-- Requirements: `.kiro/specs/orders-metal-refactoring/requirements.md` (3.6, 3.7)
-- Design: `.kiro/specs/orders-metal-refactoring/design.md`

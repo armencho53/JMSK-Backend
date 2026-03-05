@@ -9,16 +9,16 @@ def test_order_controller_routes_registered():
     client = TestClient(app)
     
     # Check that the routes exist (will return 401 without auth, but that's expected)
-    # POST /api/v1/orders-v2/
-    response = client.post("/api/v1/orders-v2/")
+    # POST /api/v1/orders/
+    response = client.post("/api/v1/orders/")
     assert response.status_code in [401, 422], "Order creation endpoint should exist"
     
-    # GET /api/v1/orders-v2/{order_id}
-    response = client.get("/api/v1/orders-v2/1")
+    # GET /api/v1/orders/{order_id}
+    response = client.get("/api/v1/orders/1")
     assert response.status_code in [401, 404], "Order retrieval endpoint should exist"
     
-    # PUT /api/v1/orders-v2/{order_id}
-    response = client.put("/api/v1/orders-v2/1")
+    # PUT /api/v1/orders/{order_id}
+    response = client.put("/api/v1/orders/1")
     assert response.status_code in [401, 422], "Order update endpoint should exist"
 
 
@@ -50,8 +50,8 @@ def test_openapi_schema_includes_new_routes():
     paths = openapi_schema.get("paths", {})
     
     # Check for new order routes
-    assert "/api/v1/orders-v2/" in paths, "Order creation route should be in OpenAPI schema"
-    assert "/api/v1/orders-v2/{order_id}" in paths, "Order retrieval route should be in OpenAPI schema"
+    assert "/api/v1/orders/" in paths, "Order creation route should be in OpenAPI schema"
+    assert "/api/v1/orders/{order_id}" in paths, "Order retrieval route should be in OpenAPI schema"
     
     # Check for metal price route
     assert "/api/v1/metals/price/{metal_code}" in paths, "Metal price route should be in OpenAPI schema"

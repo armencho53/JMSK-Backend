@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from datetime import datetime
+import warnings
 from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
@@ -12,6 +13,14 @@ from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse
 from app.data.repositories.metal_repository import MetalRepository
 
 router = APIRouter()
+
+# Deprecation warning
+warnings.warn(
+    "The /orders-legacy endpoint is deprecated and will be removed in a future version. "
+    "Please use /orders endpoint instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 def generate_order_number(tenant_id: int, db: Session) -> str:
     count = db.query(Order).filter(Order.tenant_id == tenant_id).count()

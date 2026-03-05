@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         case_sensitive = True
         # Cache settings to avoid re-reading env vars
         frozen = True
+        # Allow extra environment variables (like DATABASE_URL_LOCAL, etc.)
+        extra = "allow"
 
 @lru_cache()
 def get_settings() -> Settings:
