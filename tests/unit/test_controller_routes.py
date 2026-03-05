@@ -9,6 +9,10 @@ def test_order_controller_routes_registered():
     client = TestClient(app)
     
     # Check that the routes exist (will return 401 without auth, but that's expected)
+    # GET /api/v1/orders/ (list)
+    response = client.get("/api/v1/orders/")
+    assert response.status_code in [401], "Order list endpoint should exist"
+    
     # POST /api/v1/orders/
     response = client.post("/api/v1/orders/")
     assert response.status_code in [401, 422], "Order creation endpoint should exist"

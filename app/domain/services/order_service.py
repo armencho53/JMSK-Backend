@@ -146,6 +146,79 @@ class OrderService:
             self.db.rollback()
             logger.error(f"Database error creating order: {str(e)}")
             raise ValidationError(f"Failed to create order: {str(e)}")
+    def get_all_orders(
+        self,
+        tenant_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[OrderResponse]:
+        """
+        Get all orders for a tenant with pagination.
+
+        Returns orders with:
+        - Contact and company information
+        - All line items with metal names
+        - Proper multi-tenant isolation
+
+        Args:
+            tenant_id: Tenant ID for isolation
+            skip: Number of records to skip (pagination)
+            limit: Maximum number of records to return
+
+        Returns:
+            List of OrderResponse objects
+        """
+        try:
+            # Get orders from repository
+            orders = self.order_repo.get_all(tenant_id=tenant_id, skip=skip, limit=limit)
+
+            # Convert to response format with line items
+            order_responses = []
+            for order in orders:
+                # Get line items for this order
+                line_items = self.line_item_repo.get_by_order_id(
+                    order_id=order.id,
+                    tenant_id=tenant_id
+                )
+
+                # Convert line items to response format
+                line_item_responses = [
+                    OrderLineItemResponse(
+                        id=item.id,
+                        order_id=item.order_id,
+                        metal_id=item.metal_id,
+                        metal_name=item.metal.name if item.metal else None,
+                        quantity=item.quantity,
+                        weight=item.weight,
+                        description=item.description,
+                        created_at=item.created_at,
+                        updated_at=item.updated_at
+                    )
+                    for item in line_items
+                ]
+
+                # Build order response
+                order_response = OrderResponse(
+                    id=order.id,
+                    order_number=order.order_number,
+                    contact_id=order.contact_id,
+                    contact_name=order.contact.name if order.contact else None,
+                    company_id=order.company_id,
+                    company_name=order.company.name if order.company else None,
+                    due_date=order.due_date,
+                    status=order.status,
+                    line_items=line_item_responses,
+                    created_at=order.created_at,
+                    updated_at=order.updated_at
+                )
+                order_responses.append(order_response)
+
+            return order_responses
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting orders: {str(e)}")
+            raise ValidationError(f"Failed to retrieve orders: {str(e)}")
+
     
     def update_order(
         self,

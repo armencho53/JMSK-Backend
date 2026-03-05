@@ -54,3 +54,35 @@ class OrderRepository(BaseRepository[Order]):
             Order.id == order_id,
             Order.tenant_id == tenant_id
         ).first()
+    def get_all(
+        self,
+        tenant_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Order]:
+        """
+        Get all orders with relationships eagerly loaded.
+
+        Overrides base get_all to include eager loading of:
+        - contact
+        - company
+        - metal
+        - line_items
+
+        Args:
+            tenant_id: Tenant ID for multi-tenant isolation
+            skip: Number of records to skip (pagination)
+            limit: Maximum number of records to return
+
+        Returns:
+            List of Order objects with relationships loaded
+        """
+        return self.db.query(Order).options(
+            joinedload(Order.contact),
+            joinedload(Order.company),
+            joinedload(Order.metal),
+            joinedload(Order.line_items)
+        ).filter(
+            Order.tenant_id == tenant_id
+        ).offset(skip).limit(limit).all()
+

@@ -47,6 +47,37 @@ def create_order_with_deposit(
         )
     except DomainException as e:
         handle_domain_exception(e)
+@router.get("/", response_model=List[OrderResponse])
+def list_orders(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Get all orders with pagination.
+
+    Returns a list of orders with:
+    - All associated line items
+    - Contact and company information
+    - Metal names for each line item
+
+    Query Parameters:
+    - skip: Number of records to skip (default: 0)
+    - limit: Maximum number of records to return (default: 100)
+
+    Requirements: 3.9, 3.10
+    """
+    try:
+        service = OrderService(db)
+        return service.get_all_orders(
+            tenant_id=current_user.tenant_id,
+            skip=skip,
+            limit=limit,
+        )
+    except DomainException as e:
+        handle_domain_exception(e)
+
 
 
 @router.get("/{order_id}", response_model=OrderResponse)
