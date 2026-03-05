@@ -176,7 +176,7 @@ jobs:
           path: |
             .aws-sam/build
             .aws-sam/cache
-          key: ${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-${{ hashFiles('template.yaml', 'requirements.txt', 'samconfig.toml') }}
+          key: ${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-${{ hashFiles('template.yaml', 'requirements.txt', 'app/**/*.py') }}
           restore-keys: |
             ${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-sam-
@@ -350,15 +350,27 @@ jobs:
           DB_REVISION=$(echo "$RESULT" | cut -d'|' -f2)
           HEAD=$(alembic heads 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
 
+          # Get list of known revisions in the current migration chain
+          KNOWN_REVISIONS=$(alembic history 2>/dev/null | grep -oP '^\S+' | tr '\n' ' ' || echo "")
+
           echo "Database has tables: $HAS_TABLES"
           echo "Database revision:   ${DB_REVISION:-<empty>}"
           echo "Head revision:       $HEAD"
+          echo "Known revisions:     $KNOWN_REVISIONS"
 
           if [ "$DB_REVISION" = "$HEAD" ]; then
             echo "✅ Database is up to date — no migrations needed"
             echo "needed=false" >> $GITHUB_OUTPUT
-          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ] && [ "$DB_REVISION" != "$HEAD" ]; then
-            echo "📌 Stale revision '$DB_REVISION' found — stamping to consolidated head"
+          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ] && echo "$KNOWN_REVISIONS" | grep -q "$DB_REVISION"; then
+            echo "📌 Database at revision '$DB_REVISION' — pending migrations to '$HEAD'"
+            echo "needed=true" >> $GITHUB_OUTPUT
+          elif [ "$HAS_TABLES" = "True" ] && [ -z "$DB_REVISION" ]; then
+            echo "📌 Existing database without version tracking — stamping to head"
+            alembic stamp head
+            echo "✅ Database stamped to head"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ]; then
+            echo "⚠️ Unknown revision '$DB_REVISION' — stamping to 001_consolidated and running migrations"
             python3 -c "
           import os, sqlalchemy
           url = os.environ['DATABASE_URL']
@@ -373,12 +385,7 @@ jobs:
           engine.dispose()
           print('Done')"
             echo "✅ Database stamped to 001_consolidated"
-            echo "needed=false" >> $GITHUB_OUTPUT
-          elif [ "$HAS_TABLES" = "True" ] && [ -z "$DB_REVISION" ]; then
-            echo "📌 Existing database without version tracking — stamping to head"
-            alembic stamp head
-            echo "✅ Database stamped to head"
-            echo "needed=false" >> $GITHUB_OUTPUT
+            echo "needed=true" >> $GITHUB_OUTPUT
           else
             echo "⚠️ Fresh database — migrations needed"
             echo "needed=true" >> $GITHUB_OUTPUT
