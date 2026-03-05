@@ -35,8 +35,8 @@ api_router.include_router(
 
 api_router.include_router(
     company_controller.router,
-    prefix="/companies",
-    tags=["companies"]
+    prefix="/companies-v2",  # Use different prefix to avoid conflict with legacy
+    tags=["companies-v2"]
 )
 
 api_router.include_router(
@@ -85,7 +85,7 @@ api_router.include_router(
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
-api_router.include_router(companies.router, prefix="/companies-legacy", tags=["companies-legacy"], deprecated=True)
+api_router.include_router(companies.router, prefix="/companies", tags=["companies"])
 api_router.include_router(supplies.router, prefix="/supplies", tags=["supplies"])
 api_router.include_router(orders.router, prefix="/orders-legacy", tags=["orders-legacy"], deprecated=True)
 api_router.include_router(shipments.router, prefix="/shipments", tags=["shipments"])

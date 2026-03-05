@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-import warnings
 from app.data.database import get_db
 from app.presentation.api.dependencies import get_current_active_user
 from app.data.models.user import User
@@ -10,14 +9,6 @@ from app.data.models.contact import Contact
 from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 
 router = APIRouter()
-
-# Deprecation warning
-warnings.warn(
-    "The /companies-legacy endpoint is deprecated and will be removed in a future version. "
-    "Please use /companies endpoint instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
 
 @router.get("/", response_model=List[CompanyResponse])
 def list_companies(
