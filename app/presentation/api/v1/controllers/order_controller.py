@@ -41,7 +41,7 @@ def create_order_with_deposit(
     try:
         service = OrderService(db)
         return service.create_order_with_deposit(
-            order_data=order_data,
+            order_data=order_data.model_dump(),
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
         )
@@ -126,7 +126,7 @@ def update_order(
         service = OrderService(db)
         return service.update_order(
             order_id=order_id,
-            order_data=order_data,
+            order_data=order_data.model_dump(exclude_unset=True),
             tenant_id=current_user.tenant_id,
         )
     except DomainException as e:
