@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Load .env file so DATABASE_URL is available without manual export
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=False)  # Don't override env vars already set (e.g. DATABASE_URL from CLI)
 except ImportError:
     pass  # python-dotenv not installed, rely on env vars being set
 
@@ -56,7 +56,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            transaction_per_migration=True,
         )
 
         with context.begin_transaction():

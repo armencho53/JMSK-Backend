@@ -1,7 +1,7 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 
 # Lazy imports for faster cold starts
 IS_LAMBDA = os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
@@ -19,32 +19,46 @@ app = FastAPI(
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
     root_path=root_path,
     lifespan=None,  # Disable lifespan for faster Lambda startup
+    redirect_slashes=True,  # Default behavior — frontend uses trailing slashes to avoid redirects
 )
 
-# Custom CORS middleware to ensure headers are always present
-# This is critical for Lambda/API Gateway where standard CORSMiddleware
-# may not cover all edge cases (e.g., unhandled exceptions, streaming responses)
-class CORSHeaderMiddleware(BaseHTTPMiddleware):
-    CORS_HEADERS = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
-        "Access-Control-Max-Age": "3600",
-    }
+# Standard CORS middleware — handles preflight and adds headers to all responses
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    max_age=3600,
+)
 
-    async def dispatch(self, request: Request, call_next):
-        # Handle preflight OPTIONS requests directly
-        if request.method == "OPTIONS":
-            return JSONResponse(content={}, headers=self.CORS_HEADERS)
-        
-        # Process the request and add CORS headers
-        response = await call_next(request)
-        for key, value in self.CORS_HEADERS.items():
-            response.headers[key] = value
-        return response
 
-# Single CORS middleware — handles both preflight and actual requests
-app.add_middleware(CORSHeaderMiddleware)
+# Global exception handler to ensure CORS headers on unhandled errors
+# Only catches non-HTTP exceptions (HTTPException is handled by FastAPI's built-in handler)
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        # Let FastAPI's default handler deal with HTTPExceptions
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+                **(exc.headers or {}),
+            },
+        )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+        },
+    )
+
 
 # Using new layered architecture router
 from app.presentation.api.v1.router import api_router
