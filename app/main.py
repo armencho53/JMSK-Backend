@@ -19,7 +19,7 @@ app = FastAPI(
     swagger_ui_oauth2_redirect_url=None,  # Disable OAuth2 redirect for docs
     root_path=root_path,
     lifespan=None,  # Disable lifespan for faster Lambda startup
-    redirect_slashes=False,  # Prevent 307 redirects that break CORS behind API Gateway
+    redirect_slashes=True,  # Default behavior — frontend uses trailing slashes to avoid redirects
 )
 
 # Custom CORS middleware to ensure headers are always present
