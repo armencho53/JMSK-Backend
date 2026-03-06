@@ -38,15 +38,21 @@ def create_order_with_deposit(
     
     Requirements: 3.9, 3.10, 5.8
     """
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         service = OrderService(db)
-        return service.create_order_with_deposit(
+        result = service.create_order_with_deposit(
             order_data=order_data.model_dump(),
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
         )
+        return result
     except DomainException as e:
         handle_domain_exception(e)
+    except Exception as e:
+        logger.error(f"Unexpected error creating order: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 @router.get("/", response_model=List[OrderResponse])
 def list_orders(
     skip: int = 0,

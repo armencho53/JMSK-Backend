@@ -47,7 +47,7 @@ class OrderRepository(BaseRepository[Order]):
         Requirements: 3.9
         """
         return self.db.query(Order).options(
-            joinedload(Order.line_items).joinedload(OrderLineItem.metal),
+            subqueryload(Order.line_items).joinedload(OrderLineItem.metal),
             joinedload(Order.contact),
             joinedload(Order.company),
             joinedload(Order.metal)
@@ -82,7 +82,7 @@ class OrderRepository(BaseRepository[Order]):
             joinedload(Order.contact),
             joinedload(Order.company),
             joinedload(Order.metal),
-            joinedload(Order.line_items).joinedload(OrderLineItem.metal)
+            subqueryload(Order.line_items).joinedload(OrderLineItem.metal)
         ).filter(
             Order.tenant_id == tenant_id
         ).offset(skip).limit(limit).all()

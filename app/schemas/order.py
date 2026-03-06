@@ -38,9 +38,9 @@ class OrderLineItemResponse(OrderLineItemBase):
         from_attributes = True
 
 class OrderBase(BaseModel):
-    product_description: str
+    product_description: Optional[str] = None
     specifications: Optional[str] = None
-    quantity: int = 1
+    quantity: Optional[int] = 1
     price: Optional[float] = None
     due_date: Optional[datetime] = None
     metal_id: Optional[int] = None
