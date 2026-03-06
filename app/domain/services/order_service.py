@@ -169,17 +169,17 @@ class OrderService:
             List of OrderResponse objects
         """
         try:
-            # Get orders from repository (relationships already eager-loaded)
+            # Get orders from repository (all relationships already eager-loaded)
             orders = self.order_repo.get_all(tenant_id=tenant_id, skip=skip, limit=limit)
 
-            # Convert to response format using the same method as single-order fetch
+            # Build responses directly from eager-loaded data (no extra queries)
             order_responses = []
             for order in orders:
                 try:
-                    response = self.get_order_with_line_items(order.id, tenant_id)
+                    response = self._build_order_response(order)
                     order_responses.append(response)
-                except ResourceNotFoundError:
-                    continue  # Skip orders that can't be loaded
+                except Exception:
+                    continue  # Skip orders that can't be serialized
 
             return order_responses
 
@@ -391,3 +391,66 @@ class OrderService:
         """
         count = self.order_repo.count(tenant_id)
         return f"ORD-{tenant_id}-{count + 1:06d}"
+
+    def _build_order_response(self, order: Order) -> OrderResponse:
+        """Build OrderResponse from an already eager-loaded Order object."""
+        line_items_response = []
+        for line_item in order.line_items:
+            line_item_dict = {
+                "id": line_item.id,
+                "order_id": line_item.order_id,
+                "product_description": line_item.product_description,
+                "specifications": line_item.specifications,
+                "metal_id": line_item.metal_id,
+                "metal_name": line_item.metal.name if line_item.metal else None,
+                "quantity": line_item.quantity,
+                "target_weight_per_piece": line_item.target_weight_per_piece,
+                "initial_total_weight": line_item.initial_total_weight,
+                "price": line_item.price,
+                "labor_cost": line_item.labor_cost,
+                "created_at": line_item.created_at,
+                "updated_at": line_item.updated_at
+            }
+            line_items_response.append(OrderLineItemResponse(**line_item_dict))
+
+        order_dict = {
+            "id": order.id,
+            "order_number": order.order_number,
+            "tenant_id": order.tenant_id,
+            "contact_id": order.contact_id,
+            "company_id": order.company_id,
+            "status": order.status,
+            "due_date": order.due_date,
+            "created_at": order.created_at,
+            "updated_at": order.updated_at,
+            "line_items": line_items_response,
+            "product_description": order.product_description,
+            "specifications": order.specifications,
+            "quantity": order.quantity,
+            "price": order.price,
+            "metal_id": order.metal_id,
+            "metal_name": order.metal.name if order.metal else None,
+            "target_weight_per_piece": order.target_weight_per_piece,
+            "initial_total_weight": order.initial_total_weight,
+            "labor_cost": order.labor_cost
+        }
+
+        if order.contact:
+            from app.schemas.company import ContactSummary
+            order_dict["contact"] = ContactSummary(
+                id=order.contact.id,
+                name=order.contact.name,
+                email=order.contact.email,
+                phone=order.contact.phone
+            )
+
+        if order.company:
+            from app.schemas.contact import CompanySummary
+            order_dict["company"] = CompanySummary(
+                id=order.company.id,
+                name=order.company.name,
+                email=order.company.email,
+                phone=order.company.phone
+            )
+
+        return OrderResponse(**order_dict)

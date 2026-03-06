@@ -1,8 +1,9 @@
 """Order repository for data access"""
 from typing import List, Optional
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, subqueryload
 from app.data.repositories.base import BaseRepository
 from app.data.models.order import Order
+from app.data.models.order_line_item import OrderLineItem
 
 
 class OrderRepository(BaseRepository[Order]):
@@ -46,7 +47,7 @@ class OrderRepository(BaseRepository[Order]):
         Requirements: 3.9
         """
         return self.db.query(Order).options(
-            joinedload(Order.line_items),
+            joinedload(Order.line_items).joinedload(OrderLineItem.metal),
             joinedload(Order.contact),
             joinedload(Order.company),
             joinedload(Order.metal)
@@ -81,7 +82,7 @@ class OrderRepository(BaseRepository[Order]):
             joinedload(Order.contact),
             joinedload(Order.company),
             joinedload(Order.metal),
-            joinedload(Order.line_items)
+            joinedload(Order.line_items).joinedload(OrderLineItem.metal)
         ).filter(
             Order.tenant_id == tenant_id
         ).offset(skip).limit(limit).all()
