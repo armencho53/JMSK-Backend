@@ -139,6 +139,24 @@ def update_order(
         handle_domain_exception(e)
 
 
+@router.delete("/{order_id}", status_code=status.HTTP_200_OK)
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Delete an order and its line items (cascade)."""
+    try:
+        service = OrderService(db)
+        order = service.order_repo.get_by_id(order_id, current_user.tenant_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        service.order_repo.delete(order)
+        return {"message": "Order deleted successfully"}
+    except DomainException as e:
+        handle_domain_exception(e)
+
+
 @router.get("/{order_id}/timeline", response_model=Dict[str, Any])
 def get_order_timeline(
     order_id: int,
