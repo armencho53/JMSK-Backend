@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,8 +34,21 @@ app.add_middleware(
 
 
 # Global exception handler to ensure CORS headers on unhandled errors
+# Only catches non-HTTP exceptions (HTTPException is handled by FastAPI's built-in handler)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        # Let FastAPI's default handler deal with HTTPExceptions
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+                **(exc.headers or {}),
+            },
+        )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
