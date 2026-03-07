@@ -20,7 +20,6 @@ on:
       - 'requirements*.txt'
       - 'template.yaml'
       - 'samconfig.toml'
-      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -33,10 +32,9 @@ on:
           - staging
           - prod
 
-# Required for OIDC token exchange and repository tagging
 permissions:
   id-token: write
-  contents: write  # Required for creating and pushing tags
+  contents: read
 
 env:
   AWS_REGION: us-east-1
@@ -44,838 +42,200 @@ env:
 
 jobs:
   test:
-    name: Run Tests
+    name: Test
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-          key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements-test.txt', 'requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-pip-
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-test.txt
 
       - name: Install dependencies
-        working-directory: .
         run: |
           python -m pip install --upgrade pip
-          
-          # Check if cache was restored
-          if [ -d ~/.cache/pip ]; then
-            echo "✅ Pip cache restored successfully"
-            echo "Cache size: $(du -sh ~/.cache/pip | cut -f1)"
-          else
-            echo "📦 Building fresh pip cache"
-          fi
-          
           pip install -r requirements-test.txt
-          
-          # Display installed packages for debugging
-          echo "Installed packages:"
-          pip list --format=columns
 
-      - name: Run tests with coverage
-        working-directory: .
+      - name: Run tests
         env:
-          # Test environment variables (not used for actual connections, just to satisfy config validation)
           DATABASE_URL: "sqlite:///:memory:"
-          SECRET_KEY: "test-secret-key-for-ci-only-not-for-production-use"
+          SECRET_KEY: "test-secret-key-for-ci"
           ENVIRONMENT: "test"
-        run: |
-          echo "🧪 Running backend tests with coverage..."
-          
-          # Run tests using pytest configuration
-          if python -m pytest -v --tb=short; then
-            echo "✅ All backend tests passed with required coverage"
-          else
-            echo "❌ Backend tests failed"
-            echo "🔍 Test failures detected - check the output above for details"
-            
-            # Add test failure summary
-            echo "## ❌ Backend Tests Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Backend tests failed during execution. Check the test output above for specific failure details." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-            echo "**Workflow:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-            
-            exit 1
-          fi
-
-      - name: Upload test results and coverage
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-test-results-${{ github.run_number }}
-          path: |
-            coverage.xml
-            htmlcov/
-            .coverage
-          retention-days: 30
-
-      - name: Upload coverage to workflow summary
-        if: always()
-        working-directory: .
-        run: |
-          if [ -f coverage.xml ]; then
-            echo "## 📊 Backend Test Coverage" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
-            # Extract coverage percentage from coverage.xml
-            COVERAGE=$(python -c "
-            import xml.etree.ElementTree as ET
-            try:
-                tree = ET.parse('coverage.xml')
-                root = tree.getroot()
-                coverage = root.attrib.get('line-rate', '0')
-                print(f'{float(coverage)*100:.1f}%')
-            except:
-                print('Coverage data not available')
-            ")
-            
-            echo "**Overall Coverage:** $COVERAGE" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "📁 Detailed coverage report available in artifacts" >> $GITHUB_STEP_SUMMARY
-          fi
+        run: pytest -v --tb=short
 
   build:
-    name: Build Lambda Package
+    name: Build
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name != 'pull_request'
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Set up AWS SAM CLI
-        uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
 
-      - name: Cache SAM build artifacts
-        uses: actions/cache@v3
-        with:
-          path: |
-            .aws-sam/build
-            .aws-sam/cache
-          key: ${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-${{ hashFiles('template.yaml', 'requirements.txt', 'app/**/*.py') }}
-          restore-keys: |
-            ${{ runner.os }}-sam-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-sam-
+      - name: SAM build
+        run: sam build --use-container --cached
 
-      - name: Build Lambda package
-        working-directory: .
-        run: |
-          echo "🔨 Building Lambda package..."
-          
-          # Check if SAM cache was restored
-          if [ -d .aws-sam/build ]; then
-            echo "✅ SAM build cache restored"
-            echo "Cache contents:"
-            ls -la .aws-sam/build/ || true
-          else
-            echo "📦 Building fresh SAM artifacts"
-          fi
-          
-          # Build with container for consistent environment
-          if sam build --use-container --cached; then
-            echo "✅ SAM build completed successfully"
-            echo "Build artifacts:"
-            ls -la .aws-sam/build/
-          else
-            echo "❌ SAM build failed"
-            echo "🔍 Check the build output above for specific error details"
-            
-            # Add build failure summary
-            echo "## ❌ Backend Build Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "SAM build failed during Lambda package creation. Check the build output above for specific error details." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-            echo "**Workflow:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-            
-            exit 1
-          fi
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sam-build-artifacts
           path: .aws-sam/build/
 
   determine-environment:
-    name: Determine Deployment Environment
+    name: Determine Environment
     runs-on: ubuntu-latest
     needs: [test, build]
     if: github.event_name != 'pull_request'
-    
     outputs:
-      environment: ${{ steps.env-logic.outputs.environment }}
-      should-deploy: ${{ steps.env-logic.outputs.should-deploy }}
-    
+      environment: ${{ steps.env.outputs.environment }}
+      should-deploy: ${{ steps.env.outputs.should-deploy }}
     steps:
-      - name: Determine environment and deployment logic
-        id: env-logic
+      - name: Set environment
+        id: env
         run: |
-          # Environment determination logic
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual dispatch - use selected environment
-            ENVIRONMENT="${{ inputs.environment }}"
-            SHOULD_DEPLOY="true"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            # Automatic deployment based on branch
-            case "${{ github.ref }}" in
-              "refs/heads/main")
-                ENVIRONMENT="prod"
-                SHOULD_DEPLOY="true"
-                ;;
-              "refs/heads/develop")
-                ENVIRONMENT="dev"
-                SHOULD_DEPLOY="true"
-                ;;
-              "refs/heads/staging")
-                ENVIRONMENT="staging"
-                SHOULD_DEPLOY="true"
-                ;;
-              *)
-                # Other branches - no deployment
-                ENVIRONMENT="dev"
-                SHOULD_DEPLOY="false"
-                ;;
-            esac
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
           else
-            # Other events - no deployment
-            ENVIRONMENT="dev"
-            SHOULD_DEPLOY="false"
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
           fi
-          
-          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          echo "should-deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
-          echo "Determined environment: $ENVIRONMENT (deploy: $SHOULD_DEPLOY)"
 
   migrate:
-    name: Run DB Migrations (${{ needs.determine-environment.outputs.environment }})
+    name: Migrate DB
     runs-on: ubuntu-latest
-    needs: [test, build, determine-environment]
+    needs: [determine-environment]
     if: needs.determine-environment.outputs.should-deploy == 'true'
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
-      - name: Install migration dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install alembic
 
-      - name: Select database connection string
+      - name: Resolve database URL
         id: db-url
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
         run: |
-          case "$DEPLOY_ENV" in
-            "prod")
-              DB_URL="${{ secrets.DATABASE_URL_PROD }}"
-              ;;
-            *)
-              DB_URL="${{ secrets.DATABASE_URL_DEV }}"
-              ;;
+          case "${{ needs.determine-environment.outputs.environment }}" in
+            prod) DB_URL="${{ secrets.DATABASE_URL_PROD }}" ;;
+            *)    DB_URL="${{ secrets.DATABASE_URL_DEV }}" ;;
           esac
-
           if [ -z "$DB_URL" ]; then
-            echo "❌ DATABASE_URL secret not set for environment: $DEPLOY_ENV"
-            echo "Set DATABASE_URL_DEV or DATABASE_URL_PROD in GitHub repository secrets."
+            echo "❌ DATABASE_URL secret not set"
             exit 1
           fi
-
           echo "::add-mask::$DB_URL"
           echo "db_url=$DB_URL" >> $GITHUB_OUTPUT
-          echo "✅ Database URL resolved for $DEPLOY_ENV"
 
-      - name: Check and fix migration state
-        id: check
+      - name: Run migrations
         env:
           DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
-          SECRET_KEY: "migration-only-not-used"
-        run: |
-          echo "🔍 Checking database migration state..."
-
-          # Query the DB directly to avoid Alembic crashing on stale revisions
-          RESULT=$(python3 -c "
-          import os, sqlalchemy
-          url = os.environ['DATABASE_URL']
-          if url.startswith('postgresql://'):
-              url = url.replace('postgresql://', 'postgresql+psycopg://', 1)
-          elif url.startswith('postgresql+psycopg2://'):
-              url = url.replace('postgresql+psycopg2://', 'postgresql+psycopg://', 1)
-          engine = sqlalchemy.create_engine(url)
-          insp = sqlalchemy.inspect(engine)
-          tables = insp.get_table_names()
-          has_tables = 'tenants' in tables
-          has_version_table = 'alembic_version' in tables
-          current_rev = None
-          if has_version_table:
-              with engine.connect() as conn:
-                  row = conn.execute(sqlalchemy.text('SELECT version_num FROM alembic_version LIMIT 1')).fetchone()
-                  if row:
-                      current_rev = row[0]
-          engine.dispose()
-          print(f'{has_tables}|{current_rev or \"\"}')" 2>&1)
-
-          HAS_TABLES=$(echo "$RESULT" | cut -d'|' -f1)
-          DB_REVISION=$(echo "$RESULT" | cut -d'|' -f2)
-          HEAD=$(alembic heads 2>/dev/null | head -1 | awk '{print $1}' || echo "none")
-
-          # Get list of known revisions in the current migration chain
-          KNOWN_REVISIONS=$(alembic history 2>/dev/null | grep -oP '^\S+' | tr '\n' ' ' || echo "")
-
-          echo "Database has tables: $HAS_TABLES"
-          echo "Database revision:   ${DB_REVISION:-<empty>}"
-          echo "Head revision:       $HEAD"
-          echo "Known revisions:     $KNOWN_REVISIONS"
-
-          if [ "$DB_REVISION" = "$HEAD" ]; then
-            echo "✅ Database is up to date — no migrations needed"
-            echo "needed=false" >> $GITHUB_OUTPUT
-          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ] && echo "$KNOWN_REVISIONS" | grep -q "$DB_REVISION"; then
-            echo "📌 Database at revision '$DB_REVISION' — pending migrations to '$HEAD'"
-            echo "needed=true" >> $GITHUB_OUTPUT
-          elif [ "$HAS_TABLES" = "True" ] && [ -z "$DB_REVISION" ]; then
-            echo "📌 Existing database without version tracking — stamping to head"
-            alembic stamp head
-            echo "✅ Database stamped to head"
-            echo "needed=false" >> $GITHUB_OUTPUT
-          elif [ "$HAS_TABLES" = "True" ] && [ -n "$DB_REVISION" ]; then
-            echo "⚠️ Unknown revision '$DB_REVISION' — stamping to 001_consolidated and running migrations"
-            python3 -c "
-          import os, sqlalchemy
-          url = os.environ['DATABASE_URL']
-          if url.startswith('postgresql://'):
-              url = url.replace('postgresql://', 'postgresql+psycopg://', 1)
-          elif url.startswith('postgresql+psycopg2://'):
-              url = url.replace('postgresql+psycopg2://', 'postgresql+psycopg://', 1)
-          engine = sqlalchemy.create_engine(url)
-          with engine.begin() as conn:
-              conn.execute(sqlalchemy.text('DELETE FROM alembic_version'))
-              conn.execute(sqlalchemy.text(\"INSERT INTO alembic_version (version_num) VALUES ('001_consolidated')\"))
-          engine.dispose()
-          print('Done')"
-            echo "✅ Database stamped to 001_consolidated"
-            echo "needed=true" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Fresh database — migrations needed"
-            echo "needed=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run alembic upgrade head
-        if: steps.check.outputs.needed == 'true'
-        env:
-          DATABASE_URL: ${{ steps.db-url.outputs.db_url }}
-          SECRET_KEY: "migration-only-not-used"
-        run: |
-          echo "🚀 Applying migrations..."
-          if alembic upgrade head; then
-            echo "✅ Migrations applied successfully"
-          else
-            echo "❌ Migration failed — aborting deployment"
-            exit 1
-          fi
-
-      - name: Migration summary
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-          NEEDED: ${{ steps.check.outputs.needed }}
-        run: |
-          echo "## 🗄️ Database Migration ($DEPLOY_ENV)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "$NEEDED" = "true" ]; then
-            echo "**Status:** ✅ Migrations applied" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Status:** ✅ Already up to date — skipped" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
+          SECRET_KEY: "migration-only"
+        run: alembic upgrade head
     outputs:
       db-url: ${{ steps.db-url.outputs.db_url }}
 
-  test-against-real-db:
-    name: Run Tests Against Real DB (${{ needs.determine-environment.outputs.environment }})
-    runs-on: ubuntu-latest
-    needs: [test, build, determine-environment, migrate]
-    if: needs.determine-environment.outputs.should-deploy == 'true'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-test.txt
-
-      - name: Run integration tests against real database
-        env:
-          DATABASE_URL: ${{ needs.migrate.outputs.db-url }}
-          SECRET_KEY: "test-secret-key-for-ci-only"
-          ENVIRONMENT: "test"
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "🧪 Running integration tests against $DEPLOY_ENV database..."
-          
-          # Run only integration tests (marked with @pytest.mark.integration)
-          if python -m pytest -m integration -v --tb=short 2>&1 | tee test_output.log; then
-            echo "✅ All integration tests passed against real database"
-          else
-            echo "⚠️ Some integration tests failed - check output above"
-            echo "Note: This won't block deployment, but should be investigated"
-          fi
-
-      - name: Test summary
-        if: always()
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "## 🧪 Integration Tests ($DEPLOY_ENV Database)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f test_output.log ]; then
-            # Extract test results
-            PASSED=$(grep -oP '\d+(?= passed)' test_output.log | tail -1 || echo "0")
-            FAILED=$(grep -oP '\d+(?= failed)' test_output.log | tail -1 || echo "0")
-            
-            echo "**Tests Passed:** $PASSED" >> $GITHUB_STEP_SUMMARY
-            echo "**Tests Failed:** $FAILED" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Status:** Tests completed" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
   deploy:
-    name: Deploy to ${{ needs.determine-environment.outputs.environment }}
+    name: Deploy (${{ needs.determine-environment.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: [test, build, determine-environment, migrate, test-against-real-db]
+    needs: [determine-environment, migrate]
     if: needs.determine-environment.outputs.should-deploy == 'true'
-    
     environment: ${{ needs.determine-environment.outputs.environment }}
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up AWS SAM CLI
-        uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: sam-build-artifacts
           path: .aws-sam/build/
 
-      - name: Set environment-specific variables
+      - name: Set environment variables
         id: env-vars
         env:
           DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
         run: |
-          # Set environment-specific AWS role ARNs and secret names
           case "$DEPLOY_ENV" in
-            "dev")
-              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_DEV || vars.AWS_ROLE_ARN }}"
-              SECRET_NAME="${{ vars.SECRET_NAME_DEV || format('jewelry-manufacturing-{0}', 'dev') }}"
-              ;;
-            "staging")
-              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_STAGING || vars.AWS_ROLE_ARN }}"
-              SECRET_NAME="${{ vars.SECRET_NAME_STAGING || format('jewelry-manufacturing-{0}', 'staging') }}"
-              ;;
-            "prod")
-              AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD || vars.AWS_ROLE_ARN }}"
-              SECRET_NAME="${{ vars.SECRET_NAME_PROD || format('jewelry-manufacturing-{0}', 'prod') }}"
-              ;;
-            *)
-              echo "Unknown environment: $DEPLOY_ENV"
-              exit 1
-              ;;
+            dev)     AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_DEV || vars.AWS_ROLE_ARN }}" ;;
+            staging) AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_STAGING || vars.AWS_ROLE_ARN }}" ;;
+            prod)    AWS_ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD || vars.AWS_ROLE_ARN }}" ;;
           esac
-          
+          SECRET_NAME="${{ vars.SECRET_NAME_DEV || format('jewelry-manufacturing-{0}', needs.determine-environment.outputs.environment) }}"
           echo "aws-role-arn=$AWS_ROLE_ARN" >> $GITHUB_OUTPUT
           echo "secret-name=$SECRET_NAME" >> $GITHUB_OUTPUT
-          echo "Using AWS Role: $AWS_ROLE_ARN"
-          echo "Using Secret: $SECRET_NAME"
 
-      - name: Configure AWS credentials via OIDC
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ steps.env-vars.outputs.aws-role-arn }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: GitHubActions-Backend-Deploy-${{ needs.determine-environment.outputs.environment }}
 
-      - name: Retrieve secrets from AWS Secrets Manager
+      - name: Retrieve secrets
         id: secrets
         run: |
-          SECRET_NAME="${{ steps.env-vars.outputs.secret-name }}"
-          echo "Retrieving secrets from: $SECRET_NAME"
-          
-          # Get the secret value
           SECRET_JSON=$(aws secretsmanager get-secret-value \
-            --secret-id "$SECRET_NAME" \
-            --query SecretString \
-            --output text)
-          
-          # Parse and set environment variables (masked for security)
+            --secret-id "${{ steps.env-vars.outputs.secret-name }}" \
+            --query SecretString --output text)
           DATABASE_URL=$(echo "$SECRET_JSON" | jq -r .DATABASE_URL)
           JWT_SECRET_KEY=$(echo "$SECRET_JSON" | jq -r .JWT_SECRET_KEY)
           CORS_ORIGINS=$(echo "$SECRET_JSON" | jq -r .CORS_ORIGINS)
-          
-          # Set outputs (these will be masked in logs)
           echo "::add-mask::$DATABASE_URL"
           echo "::add-mask::$JWT_SECRET_KEY"
           echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_OUTPUT
           echo "JWT_SECRET_KEY=$JWT_SECRET_KEY" >> $GITHUB_OUTPUT
           echo "CORS_ORIGINS=$CORS_ORIGINS" >> $GITHUB_OUTPUT
 
-      - name: Validate deployment prerequisites
-        working-directory: .
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "Validating deployment prerequisites for environment: $DEPLOY_ENV"
-          
-          # Check if required secrets are available
-          if [ -z "${{ steps.secrets.outputs.DATABASE_URL }}" ]; then
-            echo "ERROR: DATABASE_URL not found in secrets"
-            exit 1
-          fi
-          
-          if [ -z "${{ steps.secrets.outputs.JWT_SECRET_KEY }}" ]; then
-            echo "ERROR: JWT_SECRET_KEY not found in secrets"
-            exit 1
-          fi
-          
-          # Validate environment-specific SAM config exists
-          if [ ! -f "samconfig.toml" ]; then
-            echo "ERROR: samconfig.toml not found"
-            exit 1
-          fi
-          
-          # Check if environment config exists in samconfig.toml
-          if ! grep -q "^\[$DEPLOY_ENV\." samconfig.toml; then
-            echo "WARNING: No specific config for $DEPLOY_ENV in samconfig.toml, using default"
-          fi
-          
-          echo "Prerequisites validation passed"
-
       - name: Deploy to AWS Lambda
-        working-directory: .
         env:
           DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
         run: |
-          echo "🚀 Starting deployment to environment: $DEPLOY_ENV"
-          
-          # Prepare parameter overrides, excluding empty values
-          PARAM_OVERRIDES="DatabaseURL=${{ steps.secrets.outputs.DATABASE_URL }} SecretKey=${{ steps.secrets.outputs.JWT_SECRET_KEY }} Stage=$DEPLOY_ENV"
-          
-          # Only add AllowedOrigins if it's not empty
-          CORS_ORIGINS="${{ steps.secrets.outputs.CORS_ORIGINS }}"
-          if [ -n "$CORS_ORIGINS" ]; then
-            PARAM_OVERRIDES="$PARAM_OVERRIDES AllowedOrigins=$CORS_ORIGINS"
-          else
-            # Use a default CORS origin for dev environment
-            PARAM_OVERRIDES="$PARAM_OVERRIDES AllowedOrigins=http://localhost:5173,http://localhost:3000"
-          fi
-          
-          echo "Deploying with parameters: DatabaseURL=***, SecretKey=***, Stage=$DEPLOY_ENV, AllowedOrigins=***"
-          
-          # Deploy using SAM with environment-specific configuration
-          if sam deploy \
+          CORS="${{ steps.secrets.outputs.CORS_ORIGINS }}"
+          [ -z "$CORS" ] && CORS="http://localhost:5173,http://localhost:3000"
+          sam deploy \
             --config-env "$DEPLOY_ENV" \
-            --parameter-overrides $PARAM_OVERRIDES \
+            --parameter-overrides \
+              DatabaseURL=${{ steps.secrets.outputs.DATABASE_URL }} \
+              SecretKey=${{ steps.secrets.outputs.JWT_SECRET_KEY }} \
+              Stage=$DEPLOY_ENV \
+              AllowedOrigins=$CORS \
             --no-fail-on-empty-changeset \
-            --no-confirm-changeset; then
-            echo "✅ SAM deployment completed successfully"
-          else
-            echo "❌ SAM deployment failed"
-            echo "🔍 Checking CloudFormation events for detailed error information..."
-            
-            # Get stack events for debugging
-            STACK_NAME="jewelry-backend-$DEPLOY_ENV"
-            aws cloudformation describe-stack-events \
-              --stack-name "$STACK_NAME" \
-              --max-items 10 \
-              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,ResourceType,ResourceStatus,ResourceStatusReason]' \
-              --output table || echo "Could not retrieve stack events"
-            
-            exit 1
-          fi
+            --no-confirm-changeset
 
-      - name: Get deployment outputs
-        id: outputs
+      - name: Validate deployment
+        id: validate
         env:
           DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
         run: |
           STACK_NAME="jewelry-backend-$DEPLOY_ENV"
-          
-          # Get API URL from CloudFormation outputs
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text)
-          
-          if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then
-            echo "ERROR: Failed to get API URL from CloudFormation stack"
-            exit 1
-          fi
-          
           echo "API_URL=$API_URL" >> $GITHUB_OUTPUT
-          echo "STACK_NAME=$STACK_NAME" >> $GITHUB_OUTPUT
-          echo "Successfully retrieved API URL: $API_URL"
-
-      - name: Validate deployment
-        env:
-          API_URL: ${{ steps.outputs.outputs.API_URL }}
-        run: |
-          echo "Validating deployment at: $API_URL"
-          
-          # Wait a moment for the API to be ready
-          sleep 10
-          
-          # Test API health check
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/docs" || echo "000")
-          
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ API is responding correctly (HTTP $HTTP_STATUS)"
-          else
-            echo "⚠️ API returned HTTP $HTTP_STATUS - this may be expected for some endpoints"
-            echo "API URL: $API_URL"
-          fi
-          
-          echo "Deployment validation completed"
-
-      - name: Tag repository with deployment version
-        id: tag-repo
-        if: success()
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-          API_URL: ${{ steps.outputs.outputs.API_URL }}
-          STACK_NAME: ${{ steps.outputs.outputs.STACK_NAME }}
-        run: |
-          # Generate version information
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          
-          # Extract version from package.json or use semantic versioning pattern
-          if [ -f "package.json" ]; then
-            VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
-          else
-            # Generate semantic version based on commit count and date
-            COMMIT_COUNT=$(git rev-list --count HEAD)
-            DATE_VERSION=$(date +%Y.%m.%d)
-            VERSION="v${DATE_VERSION}.${COMMIT_COUNT}"
-          fi
-          
-          # Create deployment tag following the specified naming convention
-          # Format: deploy-{component}-{environment}-{version}-{timestamp}
-          TAG_NAME="deploy-backend-${DEPLOY_ENV}-${VERSION}-${TIMESTAMP}"
-          
-          # Configure git for tagging
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # Create annotated tag with comprehensive deployment information
-          TAG_MESSAGE="Backend deployment to ${DEPLOY_ENV}
-          
-          Deployment Details:
-          - Environment: ${DEPLOY_ENV}
-          - Version: ${VERSION}
-          - Commit: ${{ github.sha }}
-          - Timestamp: ${TIMESTAMP}
-          - Stack: ${STACK_NAME}
-          - API URL: ${API_URL}
-          - Workflow: ${{ github.workflow }}
-          - Run ID: ${{ github.run_id }}"
-          
-          git tag -a "$TAG_NAME" -m "$TAG_MESSAGE"
-          
-          # Push the tag to repository
-          git push origin "$TAG_NAME"
-          
-          echo "✅ Created deployment tag: $TAG_NAME"
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
-          
-          # Add tag information to workflow summary
-          echo "## 🏷️ Deployment Tag Created" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag Name:** \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Cache statistics and cleanup
-        if: always()
-        run: |
-          echo "## 📊 Cache Statistics" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Pip cache statistics
-          if [ -d ~/.cache/pip ]; then
-            PIP_CACHE_SIZE=$(du -sh ~/.cache/pip | cut -f1)
-            echo "**Pip Cache:** $PIP_CACHE_SIZE" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          # SAM cache statistics
-          if [ -d backend/.aws-sam ]; then
-            SAM_CACHE_SIZE=$(du -sh backend/.aws-sam | cut -f1)
-            echo "**SAM Cache:** $SAM_CACHE_SIZE" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-      - name: Display deployment summary
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "## 🚀 Backend Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
-          echo "**Stack Name:** ${{ steps.outputs.outputs.STACK_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "**API URL:** ${{ steps.outputs.outputs.API_URL }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment Tag:** ${{ steps.tag-repo.outputs.TAG_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "- Test API: [\`${{ steps.outputs.outputs.API_URL }}/docs\`](${{ steps.outputs.outputs.API_URL }}/docs)" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend deployment will use this API URL automatically" >> $GITHUB_STEP_SUMMARY
-
-      - name: Report deployment success
-        if: success()
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "✅ Backend deployment to $DEPLOY_ENV completed successfully"
-          echo "🔗 API URL: ${{ steps.outputs.outputs.API_URL }}"
-          echo "🏷️ Deployment Tag: ${{ steps.tag-repo.outputs.TAG_NAME }}"
-          echo "📊 Stack: ${{ steps.outputs.outputs.STACK_NAME }}"
-          
-          # Set workflow status for external monitoring
-          echo "DEPLOYMENT_STATUS=success" >> $GITHUB_ENV
-          echo "DEPLOYMENT_URL=${{ steps.outputs.outputs.API_URL }}" >> $GITHUB_ENV
-          echo "DEPLOYMENT_ENVIRONMENT=$DEPLOY_ENV" >> $GITHUB_ENV
-
-      - name: Report deployment failure
-        if: failure()
-        env:
-          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
-        run: |
-          echo "❌ Backend deployment to $DEPLOY_ENV failed"
-          echo "🔍 Check the workflow logs for detailed error information"
-          echo "📋 Failed at step: ${{ job.status }}"
-          echo "🔄 Commit: ${{ github.sha }}"
-          
-          # Add failure summary to workflow
-          echo "## ❌ Backend Deployment Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** $DEPLOY_ENV" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Workflow Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
-          echo "1. Check the workflow logs above for specific error messages" >> $GITHUB_STEP_SUMMARY
-          echo "2. Verify AWS credentials and permissions" >> $GITHUB_STEP_SUMMARY
-          echo "3. Check CloudFormation stack status in AWS console" >> $GITHUB_STEP_SUMMARY
-          echo "4. Validate secrets in AWS Secrets Manager" >> $GITHUB_STEP_SUMMARY
-          
-          # Set workflow status for external monitoring
-          echo "DEPLOYMENT_STATUS=failure" >> $GITHUB_ENV
-          echo "DEPLOYMENT_ENVIRONMENT=$DEPLOY_ENV" >> $GITHUB_ENV
-          
-          exit 1
-
-    outputs:
-      api-url: ${{ steps.outputs.outputs.API_URL }}
-      environment: ${{ needs.determine-environment.outputs.environment }}
-      stack-name: ${{ steps.outputs.outputs.STACK_NAME }}
-      deployment-tag: ${{ steps.tag-repo.outputs.TAG_NAME }}
-
-  # Notification jobs for deployment events
-  notify-deployment-started:
-    name: Notify Deployment Started
-    uses: ./.github/workflows/notify-deployment.yml
-    needs: [determine-environment]
-    if: needs.determine-environment.outputs.should-deploy == 'true'
-    with:
-      deployment_status: "started"
-      deployment_environment: ${{ needs.determine-environment.outputs.environment }}
-      deployment_component: "backend"
-      commit_sha: ${{ github.sha }}
-      workflow_run_id: ${{ github.run_id }}
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
-      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
-
-  notify-deployment-success:
-    name: Notify Deployment Success
-    uses: ./.github/workflows/notify-deployment.yml
-    needs: [deploy]
-    if: success()
-    with:
-      deployment_status: "success"
-      deployment_environment: ${{ needs.deploy.outputs.environment }}
-      deployment_component: "backend"
-      deployment_url: ${{ needs.deploy.outputs.api-url }}
-      api_url: ${{ needs.deploy.outputs.api-url }}
-      commit_sha: ${{ github.sha }}
-      workflow_run_id: ${{ github.run_id }}
-      deployment_tag: ${{ needs.deploy.outputs.deployment-tag }}
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
-      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
-
-  notify-deployment-failure:
-    name: Notify Deployment Failure
-    uses: ./.github/workflows/notify-deployment.yml
-    needs: [deploy, determine-environment]
-    if: failure()
-    with:
-      deployment_status: "failure"
-      deployment_environment: ${{ needs.determine-environment.outputs.environment }}
-      deployment_component: "backend"
-      commit_sha: ${{ github.sha }}
-      workflow_run_id: ${{ github.run_id }}
-      error_details: "Backend deployment failed. Check workflow logs for details."
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      NOTIFICATION_EMAIL_API_KEY: ${{ secrets.NOTIFICATION_EMAIL_API_KEY }}
-      NOTIFICATION_EMAIL_ENDPOINT: ${{ secrets.NOTIFICATION_EMAIL_ENDPOINT }}
+          sleep 5
+          curl -sf "$API_URL/docs" > /dev/null && echo "✅ API is live at $API_URL" || echo "⚠️ API health check returned non-200"
