@@ -69,6 +69,7 @@ def sample_tenant_data():
 def sample_user_data():
     """Sample user data for testing."""
     return {
+        "username": "testuser",
         "email": "testuser@example.com",
         "password": "testpassword123",
         "full_name": "Test User",
