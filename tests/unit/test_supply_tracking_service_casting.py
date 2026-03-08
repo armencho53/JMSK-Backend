@@ -22,7 +22,7 @@ def seed_data(db_session):
     db_session.flush()
 
     user = User(
-        id=1, tenant_id=1, email="u@test.com",
+        id=1, tenant_id=1, username="testuser", email="u@test.com",
         hashed_password="x", full_name="Test User",
     )
     casting_dept = Department(id=1, tenant_id=1, name="Casting", is_active=True)

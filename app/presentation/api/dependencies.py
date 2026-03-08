@@ -41,7 +41,7 @@ def get_current_user(
         raise credentials_exception
     
     user = db.query(User).filter(
-        User.email == email,
+        User.username == email,
         User.tenant_id == tenant_id
     ).first()
     

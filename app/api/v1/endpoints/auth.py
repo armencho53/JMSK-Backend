@@ -10,7 +10,6 @@ from app.infrastructure.security import (
     get_password_hash,
     create_refresh_token,
     get_refresh_token_expires,
-    normalize_email
 )
 from app.infrastructure.config import settings
 from app.data.models.user import User
@@ -31,19 +30,17 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=TOKEN_URL)
 
 @router.post("/register", response_model=UserResponse)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Normalize email to lowercase
-    normalized_email = normalize_email(user_data.email)
-
-    # Check if email already exists (globally unique)
-    existing_user = db.query(User).filter(User.email == normalized_email).first()
+    # Check if username already exists (globally unique)
+    existing_user = db.query(User).filter(User.username == user_data.username).first()
 
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="Username already registered")
 
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
-        email=normalized_email,
+        username=user_data.username,
+        email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
         tenant_id=user_data.tenant_id,
@@ -65,11 +62,11 @@ def login(
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
-    # Normalize email to lowercase for consistent lookup
-    normalized_email = normalize_email(form_data.username)
+    # Normalize username to lowercase for consistent lookup
+    login_username = form_data.username.strip().lower()
 
-    # Query user by email (globally unique)
-    user = db.query(User).filter(User.email == normalized_email).first()
+    # Query user by username (globally unique)
+    user = db.query(User).filter(User.username == login_username).first()
 
     # Get tenant (if user exists)
     tenant = None
@@ -86,7 +83,7 @@ def login(
             login_history = LoginHistory(
                 user_id=user.id,
                 tenant_id=user.tenant_id,
-                email=normalized_email,
+                email=login_username,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 success=False,
@@ -113,7 +110,7 @@ def login(
         login_history = LoginHistory(
             user_id=user.id,
             tenant_id=user.tenant_id,
-            email=normalized_email,
+            email=login_username,
             ip_address=ip_address,
             user_agent=user_agent,
             success=False,
@@ -124,7 +121,7 @@ def login(
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",  # Don't reveal tenant status
+            detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -135,7 +132,7 @@ def login(
             login_history = LoginHistory(
                 user_id=user.id,
                 tenant_id=user.tenant_id,
-                email=normalized_email,
+                email=login_username,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 success=False,
@@ -155,7 +152,7 @@ def login(
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -164,7 +161,7 @@ def login(
         login_history = LoginHistory(
             user_id=user.id,
             tenant_id=user.tenant_id,
-            email=normalized_email,
+            email=login_username,
             ip_address=ip_address,
             user_agent=user_agent,
             success=False,
@@ -184,7 +181,7 @@ def login(
     login_history = LoginHistory(
         user_id=user.id,
         tenant_id=user.tenant_id,
-        email=normalized_email,
+        email=login_username,
         ip_address=ip_address,
         user_agent=user_agent,
         success=True,
@@ -195,7 +192,7 @@ def login(
     # Create access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "tenant_id": user.tenant_id, "user_id": user.id},
+        data={"sub": user.username, "tenant_id": user.tenant_id, "user_id": user.id},
         expires_delta=access_token_expires
     )
 
@@ -257,7 +254,7 @@ def refresh_token(refresh_token: str = Form(...), db: Session = Depends(get_db))
     # Create new access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "tenant_id": user.tenant_id, "user_id": user.id},
+        data={"sub": user.username, "tenant_id": user.tenant_id, "user_id": user.id},
         expires_delta=access_token_expires
     )
 
@@ -278,9 +275,9 @@ def logout(
 @router.get("/me", response_model=UserResponse)
 def get_current_user_info(current_user: User = Depends(get_current_active_user)):
     """Get current logged-in user information"""
-    # Add role name to response
     user_dict = {
         "id": current_user.id,
+        "username": current_user.username,
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role_id": current_user.role_id,

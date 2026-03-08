@@ -37,9 +37,3 @@ def get_refresh_token_expires(remember_me: bool = False) -> datetime:
     days = settings.REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER_ME if remember_me else settings.REFRESH_TOKEN_EXPIRE_DAYS
     return datetime.utcnow() + timedelta(days=days)
 
-def normalize_email(email: str) -> str:
-    """
-    Normalize email address by converting to lowercase and stripping whitespace.
-    Email addresses are case-insensitive per RFC 5321, so we store them lowercase for consistency.
-    """
-    return email.strip().lower()

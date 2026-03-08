@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
@@ -8,18 +8,20 @@ class Token(BaseModel):
     token_type: str
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
     password: str
     full_name: str
     tenant_id: int
+    email: Optional[str] = None
     role_id: Optional[int] = None
 
 class UserResponse(BaseModel):
     id: int
-    email: str
+    username: str
+    email: Optional[str] = None
     full_name: Optional[str]
     role_id: Optional[int]
-    role: Optional[str] = None  # Role name for frontend
+    role: Optional[str] = None
     tenant_id: int
     is_active: bool
     created_at: datetime
