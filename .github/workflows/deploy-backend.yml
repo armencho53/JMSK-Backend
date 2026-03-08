@@ -216,15 +216,7 @@ jobs:
         run: |
           CORS="${{ steps.secrets.outputs.CORS_ORIGINS }}"
           [ -z "$CORS" ] && CORS="http://localhost:5173,http://localhost:3000"
-          sam deploy \
-            --config-env "$DEPLOY_ENV" \
-            --parameter-overrides \
-              DatabaseURL=${{ steps.secrets.outputs.DATABASE_URL }} \
-              SecretKey=${{ steps.secrets.outputs.JWT_SECRET_KEY }} \
-              Stage=$DEPLOY_ENV \
-              AllowedOrigins=$CORS \
-            --no-fail-on-empty-changeset \
-            --no-confirm-changeset
+          sam deploy --config-env "$DEPLOY_ENV" --parameter-overrides DatabaseURL=${{ steps.secrets.outputs.DATABASE_URL }} SecretKey=${{ steps.secrets.outputs.JWT_SECRET_KEY }} Stage=$DEPLOY_ENV AllowedOrigins=$CORS --no-fail-on-empty-changeset --no-confirm-changeset
 
       - name: Validate deployment
         id: validate
