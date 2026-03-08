@@ -1,8 +1,9 @@
 """Metal data model for tracking metal types with fine percentage and cost"""
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, UniqueConstraint, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.data.database import Base
+from app.domain.enums import MetalType
 
 
 class Metal(Base):
@@ -15,6 +16,7 @@ class Metal(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     code = Column(String(50), nullable=False)
     name = Column(String, nullable=False)
+    metal_type = Column(Enum(MetalType), nullable=False, default=MetalType.OTHER)
     fine_percentage = Column(Float, nullable=False)
     average_cost_per_gram = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)

@@ -2,6 +2,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
+from app.domain.enums import MetalType
 
 
 class SafePurchaseCreate(BaseModel):
@@ -27,6 +28,7 @@ class SafeSupplyResponse(BaseModel):
     supply_type: str
     metal_code: Optional[str] = None
     metal_name: Optional[str] = None
+    metal_type: Optional[MetalType] = None
     quantity_grams: float
 
     class Config:
@@ -50,8 +52,9 @@ class MetalTransactionResponse(BaseModel):
 
 
 class MetalDepositCreate(BaseModel):
-    metal_id: int
-    quantity_grams: float = Field(..., gt=0, description="Quantity in grams, must be positive")
+    """Company metal deposit using MetalType enum for aggregation."""
+    metal_type: MetalType = Field(..., description="Precious metal type (GOLD, SILVER, PLATINUM, PALLADIUM, OTHER)")
+    quantity_grams: float = Field(..., gt=0, description="Pure metal weight in grams, must be positive")
     notes: Optional[str] = None
 
 
@@ -60,6 +63,7 @@ class CompanyMetalBalanceResponse(BaseModel):
     metal_id: int
     metal_code: str
     metal_name: str
+    metal_type: Optional[MetalType] = None
     balance_grams: float
 
     class Config:

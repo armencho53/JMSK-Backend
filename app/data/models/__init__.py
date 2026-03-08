@@ -9,7 +9,7 @@ from app.data.models.company import Company
 from app.data.models.contact import Contact
 from app.data.models.address import Address
 from app.data.models.order import Order
-from app.domain.enums import OrderStatus
+from app.domain.enums import OrderStatus, MetalType
 from app.data.models.order_line_item import OrderLineItem
 from app.data.models.shipment import Shipment
 from app.data.models.department import Department
@@ -35,6 +35,7 @@ __all__ = [
     "Address",
     "Order",
     "OrderStatus",
+    "MetalType",
     "OrderLineItem",
     "Shipment",
     "Department",

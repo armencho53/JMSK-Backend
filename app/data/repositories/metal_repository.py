@@ -48,3 +48,15 @@ class MetalRepository(BaseRepository[Metal]):
             .order_by(Metal.name.asc())
             .all()
         )
+    def get_reference_metal_for_type(self, metal_type: str, tenant_id: int) -> Optional[Metal]:
+        """Get the highest-purity active metal for a given metal_type (used as reference for deposits)."""
+        return (
+            self.db.query(Metal)
+            .filter(
+                Metal.tenant_id == tenant_id,
+                Metal.metal_type == metal_type,
+                Metal.is_active == True,
+            )
+            .order_by(Metal.fine_percentage.desc())
+            .first()
+        )

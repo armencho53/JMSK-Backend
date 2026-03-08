@@ -94,7 +94,7 @@ def record_company_deposit(
         return service.record_company_deposit(
             tenant_id=current_user.tenant_id,
             company_id=company_id,
-            metal_id=data.metal_id,
+            metal_type=data.metal_type,
             quantity_grams=data.quantity_grams,
             user_id=current_user.id,
             notes=data.notes,

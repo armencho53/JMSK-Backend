@@ -57,7 +57,7 @@ class OrderService:
                 - status: Order status (optional, defaults to PENDING)
                 - line_items: List of line item dictionaries (required, min 1)
                 - metal_deposit: Optional deposit dictionary with:
-                    - metal_id: ID of the metal
+                    - metal_type: Metal type (GOLD, SILVER, etc.)
                     - quantity_grams: Quantity in grams
                     - notes: Optional notes
             tenant_id: Tenant ID for multi-tenant isolation
@@ -124,7 +124,7 @@ class OrderService:
                 self.supply_tracking_service.record_company_deposit(
                     tenant_id=tenant_id,
                     company_id=company_id,
-                    metal_id=deposit_data['metal_id'],
+                    metal_type=deposit_data['metal_type'],
                     quantity_grams=deposit_data['quantity_grams'],
                     user_id=user_id,
                     notes=deposit_data.get('notes')

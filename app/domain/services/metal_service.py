@@ -4,20 +4,21 @@ from sqlalchemy.orm import Session
 from app.data.repositories.metal_repository import MetalRepository
 from app.data.models.metal import Metal
 from app.schemas.metal import MetalCreate, MetalUpdate, MetalResponse
+from app.domain.enums import MetalType
 from app.domain.exceptions import (
     ResourceNotFoundError,
     DuplicateResourceError,
 )
 
 # Default metals to seed for new tenants
-# (code, name, fine_percentage)
+# (code, name, metal_type, fine_percentage)
 DEFAULT_METALS = [
-    ("GOLD_24K", "Gold 24K", 0.999),
-    ("GOLD_22K", "Gold 22K", 0.916),
-    ("GOLD_18K", "Gold 18K", 0.750),
-    ("GOLD_14K", "Gold 14K", 0.585),
-    ("SILVER_925", "Silver 925", 0.925),
-    ("PLATINUM", "Platinum", 0.950),
+    ("GOLD_24K", "Gold 24K", MetalType.GOLD, 0.999),
+    ("GOLD_22K", "Gold 22K", MetalType.GOLD, 0.916),
+    ("GOLD_18K", "Gold 18K", MetalType.GOLD, 0.750),
+    ("GOLD_14K", "Gold 14K", MetalType.GOLD, 0.585),
+    ("SILVER_925", "Silver 925", MetalType.SILVER, 0.925),
+    ("PLATINUM", "Platinum", MetalType.PLATINUM, 0.950),
 ]
 
 
@@ -55,6 +56,7 @@ class MetalService:
             tenant_id=tenant_id,
             code=normalized_code,
             name=data.name,
+            metal_type=data.metal_type,
             fine_percentage=data.fine_percentage,
             average_cost_per_gram=data.average_cost_per_gram,
         )
@@ -83,12 +85,13 @@ class MetalService:
         return MetalResponse.model_validate(metal)
 
     def seed_defaults(self, tenant_id: int) -> None:
-        for code, name, fine_percentage in DEFAULT_METALS:
+        for code, name, metal_type, fine_percentage in DEFAULT_METALS:
             if not self.repository.code_exists(tenant_id, code):
                 metal = Metal(
                     tenant_id=tenant_id,
                     code=code,
                     name=name,
+                    metal_type=metal_type,
                     fine_percentage=fine_percentage,
                 )
                 self.repository.create(metal)
