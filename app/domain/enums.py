@@ -3,9 +3,6 @@ Centralized system enum definitions.
 
 These enums drive application branching logic (if/switch statements) and remain
 as Python enums in code. They are NOT tenant-configurable.
-
-Configurable enums (MetalType, StepType, SupplyType) are managed via the
-lookup_values database table and are tenant-scoped.
 """
 import enum
 
@@ -24,3 +21,12 @@ class ShipmentStatus(str, enum.Enum):
     IN_TRANSIT = "IN_TRANSIT"
     DELIVERED = "DELIVERED"
     RETURNED = "RETURNED"
+
+
+class MetalType(str, enum.Enum):
+    """Precious metal type categories for balance aggregation."""
+    GOLD = "GOLD"
+    SILVER = "SILVER"
+    PLATINUM = "PLATINUM"
+    PALLADIUM = "PALLADIUM"
+    OTHER = "OTHER"

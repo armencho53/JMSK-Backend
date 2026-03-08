@@ -2,11 +2,13 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
+from app.domain.enums import MetalType
 
 
 class MetalCreate(BaseModel):
     code: str = Field(..., description="UPPER_CASE metal code identifier")
     name: str = Field(..., description="Human-readable metal name")
+    metal_type: MetalType = Field(..., description="Precious metal category (GOLD, SILVER, PLATINUM, PALLADIUM, OTHER)")
     fine_percentage: float = Field(..., description="Purity as decimal 0.0-1.0")
     average_cost_per_gram: Optional[float] = Field(None, description="Average cost per gram")
 
@@ -34,6 +36,7 @@ class MetalCreate(BaseModel):
 
 class MetalUpdate(BaseModel):
     name: Optional[str] = None
+    metal_type: Optional[MetalType] = None
     fine_percentage: Optional[float] = None
     average_cost_per_gram: Optional[float] = None
     is_active: Optional[bool] = None
@@ -60,6 +63,7 @@ class MetalResponse(BaseModel):
     tenant_id: int
     code: str
     name: str
+    metal_type: MetalType
     fine_percentage: float
     average_cost_per_gram: Optional[float]
     is_active: bool

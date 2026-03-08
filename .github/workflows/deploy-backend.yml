@@ -213,16 +213,18 @@ jobs:
       - name: Deploy to AWS Lambda
         env:
           DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+          PARAM_DB_URL: ${{ steps.secrets.outputs.DATABASE_URL }}
+          PARAM_SECRET_KEY: ${{ steps.secrets.outputs.JWT_SECRET_KEY }}
+          PARAM_CORS: ${{ steps.secrets.outputs.CORS_ORIGINS }}
         run: |
-          CORS="${{ steps.secrets.outputs.CORS_ORIGINS }}"
-          [ -z "$CORS" ] && CORS="http://localhost:5173,http://localhost:3000"
+          [ -z "$PARAM_CORS" ] && PARAM_CORS="http://localhost:5173,http://localhost:3000"
           sam deploy \
             --config-env "$DEPLOY_ENV" \
             --parameter-overrides \
-              DatabaseURL=${{ steps.secrets.outputs.DATABASE_URL }} \
-              SecretKey=${{ steps.secrets.outputs.JWT_SECRET_KEY }} \
-              Stage=$DEPLOY_ENV \
-              AllowedOrigins=$CORS \
+              "DatabaseURL=$PARAM_DB_URL" \
+              "SecretKey=$PARAM_SECRET_KEY" \
+              "Stage=$DEPLOY_ENV" \
+              "AllowedOrigins=$PARAM_CORS" \
             --no-fail-on-empty-changeset \
             --no-confirm-changeset
 

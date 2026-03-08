@@ -86,12 +86,14 @@ class SupplyTrackingService:
         for s in supplies:
             metal_code = s.metal.code if s.metal else None
             metal_name = s.metal.name if s.metal else None
+            metal_type = s.metal.metal_type if s.metal else None
             result.append(SafeSupplyResponse(
                 id=s.id,
                 metal_id=s.metal_id,
                 supply_type=s.supply_type,
                 metal_code=metal_code,
                 metal_name=metal_name,
+                metal_type=metal_type,
                 quantity_grams=s.quantity_grams,
             ))
         return result
@@ -112,7 +114,7 @@ class SupplyTrackingService:
         self,
         tenant_id: int,
         company_id: int,
-        metal_id: int,
+        metal_type: str,
         quantity_grams: float,
         user_id: int,
         notes: Optional[str] = None,
@@ -122,26 +124,24 @@ class SupplyTrackingService:
         if not company:
             raise ResourceNotFoundError("Company", company_id)
 
-        # Validate metal exists and is active
-        metal = self.metal_repo.get_by_id(metal_id, tenant_id)
+        # Resolve metal_type to reference metal (highest purity of that type)
+        metal = self.metal_repo.get_reference_metal_for_type(metal_type, tenant_id)
         if not metal:
-            raise ResourceNotFoundError("Metal", metal_id)
-        if not metal.is_active:
-            raise ResourceNotFoundError("Metal", metal_id)
+            raise ValidationError(f"No active metal found for type '{metal_type}'")
 
         # Increase company metal balance
-        balance = self.balance_repo.get_or_create(tenant_id, company_id, metal_id)
+        balance = self.balance_repo.get_or_create(tenant_id, company_id, metal.id)
         balance.balance_grams += quantity_grams
 
         # Also increase safe supply (fine metal)
-        safe_supply = self.safe_repo.get_or_create(tenant_id, metal_id, "FINE_METAL")
+        safe_supply = self.safe_repo.get_or_create(tenant_id, metal.id, "FINE_METAL")
         safe_supply.quantity_grams += quantity_grams
 
         # Create transaction record
         transaction = MetalTransaction(
             tenant_id=tenant_id,
             transaction_type="COMPANY_DEPOSIT",
-            metal_id=metal_id,
+            metal_id=metal.id,
             company_id=company_id,
             quantity_grams=quantity_grams,
             notes=notes,
@@ -168,6 +168,7 @@ class SupplyTrackingService:
                 metal_id=b.metal_id,
                 metal_code=b.metal.code,
                 metal_name=b.metal.name,
+                metal_type=b.metal.metal_type if b.metal else None,
                 balance_grams=b.balance_grams,
             )
             for b in balances
